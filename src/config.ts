@@ -1,8 +1,7 @@
-/** The permanent on-chain game (Bellbound), inscribed on Bells testnet and served
-    from the Nintondo content host. The wallet does not inject on the content host,
-    so the canonical play URL is bridged (see pokebells/play-bridge.html).
-    TODO: set the exact root inscription — `<host>/content/<root-id>i0`. */
-export const GAME_URL = 'https://bells-testnet-content.nintondo.io'
+/** The permanent on-chain game (Bellbound) — its root inscription, served from the
+    Nintondo content host. This is where the game actually plays. */
+export const GAME_URL =
+  'https://bells-testnet-content.nintondo.io/content/b62a7d5c904a7ae74066e3156d655c31679e9e2b86bce250740be2be2019a12fi0'
 
 export const DOCS_URL = '#'
 export const GITHUB_URL = '#'
