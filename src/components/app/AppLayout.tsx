@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { ForgeMark, Wordmark } from '../ui/Brand'
 import { EmberDot } from '../ui/EmberDot'
 import { ConnectWallet } from './ConnectWallet'
+import { fetchChainTip } from '../../lib/chain'
+import { EXPLORER, GITHUB_URL } from '../../config'
 import { AppOutlet } from '../../App'
 
 const NAV = [
@@ -73,13 +76,51 @@ export function AppLayout() {
       </main>
 
       <footer className="border-t border-ink-600/70">
-        <div className="mx-auto max-w-6xl px-5 py-6 text-sm text-text-lo">
-          Bellforge · regtest preview ·{' '}
-          <Link to="/" className="transition hover:text-text-hi">
-            back to home
-          </Link>
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-6 text-sm text-text-lo sm:flex-row">
+          <span>
+            Bellforge · regtest preview ·{' '}
+            <Link to="/" className="transition hover:text-text-hi">
+              back to home
+            </Link>
+          </span>
+          <div className="flex items-center gap-4">
+            <ChainStatus />
+            <a href={`${EXPLORER}/blocks`} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">
+              Explorer
+            </a>
+            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">
+              GitHub
+            </a>
+          </div>
         </div>
       </footer>
     </div>
+  )
+}
+
+/** Live Bellscoin block height in the footer — a quiet "the chain is alive"
+    signal. Hidden until the tip resolves (never shows a fake/placeholder). */
+function ChainStatus() {
+  const [height, setHeight] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetchChainTip('mainnet').then((r) => {
+      if (alive && !('error' in r)) setHeight(r.height)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  if (height == null) return null
+  return (
+    <a
+      href={`${EXPLORER}/blocks`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Latest Bellscoin block"
+      className="flex items-center gap-1.5 font-mono transition hover:text-text-hi"
+    >
+      <EmberDot /> block {height.toLocaleString()}
+    </a>
   )
 }
