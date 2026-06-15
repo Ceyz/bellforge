@@ -18,6 +18,8 @@ export type TokenInfo = {
   cap?: number
   minted?: number
   decimals?: number
+  /** Holder count — populated by the P4 indexer at mainnet. undefined ⇒ honest 0/— today. */
+  holders?: number
   mintModel?: string
   /** Donut distribution; a single 100% slice = fair mint. */
   distribution?: { label: string; pct: number }[]

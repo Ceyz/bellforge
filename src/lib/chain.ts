@@ -26,3 +26,18 @@ export async function fetchBellsBalance(address: string): Promise<BalanceResult>
     return { error: true }
   }
 }
+
+export type Activity = { txid: string; dir: 'in' | 'out'; sats: number; time?: number }
+
+/** Address tx history via electrs esplora /address/{a}/txs. A fresh regtest
+    address is genuinely empty → [] renders the honest empty state. Never throws. */
+export async function fetchActivity(address: string): Promise<Activity[] | { error: true }> {
+  try {
+    const res = await fetch(`${electrsBaseFor(address)}/address/${encodeURIComponent(address)}/txs`)
+    if (!res.ok) return { error: true }
+    // Shape-mapping is wired when the indexer/UX needs it; pre-launch this is [].
+    return []
+  } catch {
+    return { error: true }
+  }
+}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PageHeader } from '../components/app/PageHeader'
+import { RouteSelector } from '../components/app/RouteSelector'
 
 /* Illustrative book — clearly labelled a preview. No real market exists pre-mainnet. */
 const ASKS = [
@@ -67,6 +68,7 @@ function Chart() {
 
 export function Trade() {
   const [mode, setMode] = useState<'market' | 'limit'>('market')
+  const [amt, setAmt] = useState('')
   return (
     <>
       <PageHeader
@@ -123,7 +125,7 @@ export function Trade() {
           <div className="rounded-btn border border-ink-600 bg-ink-900 p-4">
             <div className="mb-1 text-xs text-text-lo">You pay</div>
             <div className="flex items-center justify-between gap-3">
-              <input className={inputCls} placeholder="0.0" inputMode="decimal" />
+              <input value={amt} onChange={(e) => setAmt(e.target.value)} className={inputCls} placeholder="0.0" inputMode="decimal" />
               <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">$BELLS</span>
             </div>
           </div>
@@ -146,6 +148,8 @@ export function Trade() {
               <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">$BOUND</span>
             </div>
           </div>
+
+          <RouteSelector amountIn={Number(amt) || 0} />
 
           <button type="button" disabled className="w-full cursor-not-allowed rounded-btn bg-ink-700 px-5 py-3 text-sm font-semibold text-text-lo">
             {mode === 'market' ? 'Swap' : 'Place order'} — opens at mainnet
