@@ -68,8 +68,12 @@ export function ForgeButton({
       transition={SPRING_SNAP}
       className={`ember-glow-host relative inline-flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-5 py-3 text-sm font-semibold text-ink-950 shadow-lg shadow-forge-600/25 transition-[filter] hover:brightness-110 disabled:cursor-not-allowed disabled:from-ink-700 disabled:to-ink-700 disabled:text-text-lo disabled:shadow-none ${className}`}
     >
-      <span className="relative z-10 h-6 w-6 shrink-0">
+      <span className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center">
         <ForgeStage phase={phase} reduce={!!reduce} />
+        {/* spark burst centred on the anvil strike point — independent of button width */}
+        <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2">
+          <SparkBurst fire={fire} count={18} originX={50} originY={52} spread={1.1} colorHot />
+        </span>
       </span>
       <span className="relative z-10">{label}</span>
       <motion.span
@@ -79,7 +83,6 @@ export function ForgeButton({
         animate={phase === 'burst' ? { opacity: [0, 0.7, 0] } : { opacity: 0 }}
         transition={{ duration: 0.28, ease: 'easeOut' }}
       />
-      <SparkBurst fire={fire} count={18} originX={20} originY={55} spread={1} colorHot />
     </motion.button>
   )
 }
