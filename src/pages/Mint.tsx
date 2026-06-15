@@ -1,6 +1,7 @@
 import { useWallet } from '../wallet/WalletProvider'
 import { ConnectWallet } from '../components/app/ConnectWallet'
 import { PageHeader } from '../components/app/PageHeader'
+import { PageItem } from '../components/ui/PageTransition'
 
 const input =
   'w-full rounded-btn border border-ink-600 bg-ink-900 px-3 py-2.5 text-sm text-text-hi placeholder:text-text-lo transition focus:border-forge-500/50 focus:outline-none'
@@ -10,12 +11,14 @@ export function Mint() {
   const { address } = useWallet()
   return (
     <>
-      <PageHeader
-        title="Mint"
-        subtitle="Forge a new OP_CAT token — fixed supply at genesis, on-chain mint fee, anti-inflation enforced by its own covenant."
-        status="live-regtest"
-      />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <PageItem>
+        <PageHeader
+          title="Mint"
+          subtitle="Forge a new OP_CAT token — fixed supply at genesis, on-chain mint fee, anti-inflation enforced by its own covenant."
+          status="live-regtest"
+        />
+      </PageItem>
+      <PageItem className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <form className="space-y-5 rounded-card border border-ink-600 bg-ink-800/60 p-6" onSubmit={(e) => e.preventDefault()}>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
@@ -69,7 +72,7 @@ export function Mint() {
             These hold as long as the covenant is correct — which the external audit verifies before mainnet.
           </p>
         </aside>
-      </div>
+      </PageItem>
     </>
   )
 }

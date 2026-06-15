@@ -5,6 +5,8 @@ import { StatusPill, type Status } from '../components/ui/StatusPill'
 import { Badge } from '../components/ui/Badge'
 import { PixelIcon } from '../components/ui/PixelIcon'
 import { Reveal } from '../components/ui/Reveal'
+import { EmberDot } from '../components/ui/EmberDot'
+import { SectionDivider } from '../components/ui/SectionDivider'
 import { ForgeMark, Wordmark } from '../components/ui/Brand'
 import { ConnectWallet } from '../components/app/ConnectWallet'
 import { ForgeHero } from '../components/landing/ForgeHero'
@@ -61,7 +63,7 @@ function Hero() {
       <EmberCanvas className="pointer-events-none absolute inset-0 z-0 h-full w-full" />
       <div className="relative z-10 mx-auto max-w-6xl px-5 pt-20 pb-12 text-center">
         <span className="font-micro inline-flex items-center gap-2 rounded-pill border border-forge-500/30 bg-forge-500/10 px-3.5 py-1.5 text-xs tracking-wide text-forge-300">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-forge-400" />
+          <EmberDot />
           REGTEST PREVIEW — NOT LIVE YET
         </span>
         <h1 className="font-display mx-auto mt-7 max-w-3xl text-5xl leading-[1.05] tracking-tight text-text-hi sm:text-6xl">
@@ -153,8 +155,10 @@ export function Landing() {
         <HowItWorks />
         <SurfaceGrid />
         <Ecosystem />
+        <SectionDivider />
         <TrustSecurity />
         <Tech />
+        <SectionDivider />
         <Faq />
         <FinalCta />
       </main>

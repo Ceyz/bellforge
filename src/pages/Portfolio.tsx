@@ -4,6 +4,7 @@ import { useWallet } from '../wallet/WalletProvider'
 import { fetchBellsBalance } from '../lib/chain'
 import { ConnectWallet } from '../components/app/ConnectWallet'
 import { PageHeader } from '../components/app/PageHeader'
+import { PageItem } from '../components/ui/PageTransition'
 import { asset } from '../config'
 
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null }
@@ -39,18 +40,20 @@ export function Portfolio() {
 
   return (
     <>
-      <PageHeader title="Portfolio" subtitle="Your $BELLS and OP_CAT token balances on Bellscoin." />
+      <PageItem>
+        <PageHeader title="Portfolio" subtitle="Your $BELLS and OP_CAT token balances on Bellscoin." />
+      </PageItem>
 
       {!address ? (
-        <div className="rounded-card border border-ink-600 bg-ink-800/60 p-10 text-center">
+        <PageItem className="rounded-card border border-ink-600 bg-ink-800/60 p-10 text-center">
           <img src={asset('icons/bound-ingot.png')} alt="" aria-hidden="true" className="pixelated mx-auto mb-4 h-12 w-12 opacity-80" />
           <p className="text-text-mid">Connect your wallet to see your balances.</p>
           <div className="mt-5 flex justify-center">
             <ConnectWallet />
           </div>
-        </div>
+        </PageItem>
       ) : (
-        <div className="space-y-4">
+        <PageItem className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-card border border-ink-600 bg-ink-800/60 p-5">
               <p className="text-xs text-text-lo">Address{network ? ` · ${network}` : ''}</p>
@@ -88,7 +91,7 @@ export function Portfolio() {
               Mint one →
             </Link>
           </p>
-        </div>
+        </PageItem>
       )}
     </>
   )

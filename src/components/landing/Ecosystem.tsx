@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { SectionHeading } from '../ui/SectionHeading'
 import { Reveal } from '../ui/Reveal'
 import { PixelIcon } from '../ui/PixelIcon'
@@ -9,18 +10,21 @@ const TOKENS = [
     tag: 'Native coin',
     body: 'The base asset and gas of Bellscoin — the liquidity anchor every pair trades against.',
     sprite: undefined as string | undefined,
+    to: undefined as string | undefined,
   },
   {
     sym: '$BOUND',
     tag: 'First OP_CAT token',
     body: 'The flagship token forged on Bellforge (the game’s premium token). Divisible, covenant-secured, the genesis of the standard.',
     sprite: 'icons/bound-ingot.png',
+    to: '/app/token',
   },
   {
     sym: 'OP_CAT tokens',
     tag: 'The open standard',
     body: 'Any token following the covenant standard. Mint your own, then trade, pool and lend it alongside the rest.',
     sprite: undefined,
+    to: undefined,
   },
 ]
 
@@ -36,8 +40,8 @@ export function Ecosystem() {
         lead="Bellforge is DeFi for everything on Bellscoin, not a single coin."
       />
       <div className="mt-10 grid gap-4 sm:grid-cols-3">
-        {TOKENS.map((t, i) => (
-          <Reveal key={t.sym} delay={i * 0.08} className="h-full">
+        {TOKENS.map((t, i) => {
+          const inner = (
             <div className={CARD}>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2.5">
@@ -49,9 +53,25 @@ export function Ecosystem() {
                 </span>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-text-mid">{t.body}</p>
+              {t.to && (
+                <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-forge-400">
+                  View token page →
+                </span>
+              )}
             </div>
-          </Reveal>
-        ))}
+          )
+          return (
+            <Reveal key={t.sym} delay={i * 0.08} className="h-full">
+              {t.to ? (
+                <Link to={t.to} className="block h-full">
+                  {inner}
+                </Link>
+              ) : (
+                inner
+              )}
+            </Reveal>
+          )
+        })}
       </div>
     </section>
   )
