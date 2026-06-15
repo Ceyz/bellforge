@@ -12,3 +12,9 @@ export const PROOF_URL = '#'
 /** Resolve a public/ asset URL respecting Vite's base, so refs work both at the
     custom apex domain (bellforge.app) and the github.io/bellforge/ preview. */
 export const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
+
+/** Electrs (esplora-compatible) bases for reading on-chain balances. */
+export const ELECTRS = {
+  mainnet: 'https://api.nintondo.io',
+  testnet: 'https://bells-testnet-api.nintondo.io',
+}

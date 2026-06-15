@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 
 /** The subset of window.nintondo we use. API confirmed against extension v0.3.10
-    (from the Bellbound/Islebound integration): there is NO requestAccounts /
-    getAccounts — connect via connect() then getAccount(). getNetwork() is
-    unreliable. The extension injects ASYNC after page load, so we must poll. */
+    (Bellbound/Islebound integration): NO requestAccounts/getAccounts — connect()
+    then getAccount(). getNetwork() is unreliable. The extension injects ASYNC. */
 interface NintondoProvider {
   connect: (network?: string) => Promise<unknown>
   getAccount?: () => Promise<unknown>
+  isConnected?: () => Promise<boolean>
   disconnect?: () => Promise<void>
 }
 
@@ -16,7 +16,8 @@ declare global {
   }
 }
 
-/** Pull an address out of whatever connect()/getAccount() returns. */
+const STORAGE_KEY = 'bf:wallet:connected'
+
 function pickAddress(value: unknown): string | null {
   if (!value) return null
   if (typeof value === 'string') return value
@@ -30,8 +31,7 @@ function pickAddress(value: unknown): string | null {
   return null
 }
 
-/** The Nintondo extension injects window.nintondo asynchronously after load —
-    poll for it (a reactive check, not a one-shot `!!window.nintondo` at render). */
+/** The Nintondo extension injects window.nintondo asynchronously — poll for it. */
 function waitForWallet(timeoutMs = 3000): Promise<NintondoProvider | null> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') return resolve(null)
@@ -49,8 +49,14 @@ function waitForWallet(timeoutMs = 3000): Promise<NintondoProvider | null> {
   })
 }
 
+function networkOf(address: string | null): 'mainnet' | 'testnet' | null {
+  if (!address) return null
+  return /^tb/i.test(address) ? 'testnet' : 'mainnet'
+}
+
 type WalletState = {
   address: string | null
+  network: 'mainnet' | 'testnet' | null
   connecting: boolean
   available: boolean
   connect: () => Promise<void>
@@ -64,11 +70,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [connecting, setConnecting] = useState(false)
   const [available, setAvailable] = useState(false)
 
-  // Detect the async-injected extension so the button reflects reality.
+  // Detect the async-injected extension; silently restore a prior connection.
   useEffect(() => {
     let alive = true
-    waitForWallet().then((p) => {
-      if (alive && p) setAvailable(true)
+    waitForWallet().then(async (p) => {
+      if (!alive || !p) return
+      setAvailable(true)
+      if (localStorage.getItem(STORAGE_KEY) === '1' && p.getAccount) {
+        try {
+          const addr = pickAddress(await p.getAccount())
+          if (alive && addr) setAddress(addr)
+        } catch {
+          /* not authorized this session — wait for a manual connect */
+        }
+      }
     })
     return () => {
       alive = false
@@ -87,7 +102,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const result = await p.connect()
       let addr = pickAddress(result)
       if (!addr && p.getAccount) addr = pickAddress(await p.getAccount())
-      if (addr) setAddress(addr)
+      if (addr) {
+        setAddress(addr)
+        localStorage.setItem(STORAGE_KEY, '1')
+      }
     } catch {
       /* user rejected the popup — stay disconnected */
     } finally {
@@ -95,10 +113,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const disconnect = useCallback(() => setAddress(null), [])
+  const disconnect = useCallback(() => {
+    setAddress(null)
+    localStorage.removeItem(STORAGE_KEY)
+  }, [])
 
   return (
-    <Ctx.Provider value={{ address, connecting, available, connect, disconnect }}>
+    <Ctx.Provider value={{ address, network: networkOf(address), connecting, available, connect, disconnect }}>
       {children}
     </Ctx.Provider>
   )
