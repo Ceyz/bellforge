@@ -2,24 +2,19 @@ import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useWallet } from '../wallet/WalletProvider'
 import { fetchBellsBalance, fetchActivity, type Activity } from '../lib/chain'
-import { useForgeProgress } from '../lib/forge-progress'
 import { ConnectWallet } from '../components/app/ConnectWallet'
 import { PageHeader } from '../components/app/PageHeader'
 import { PageItem } from '../components/ui/PageTransition'
 import { LinkButton } from '../components/ui/Button'
 import { EmberDot } from '../components/ui/EmberDot'
 import { OdometerNumber } from '../components/juice/OdometerNumber'
-import { XPBar } from '../components/juice/XPBar'
-import { QuestList } from '../components/juice/QuestList'
-import { MedalShelf } from '../components/juice/MedalShelf'
-import { QuestEmpty } from '../components/juice/QuestEmpty'
+import { ForgeEmpty } from '../components/juice/ForgeEmpty'
 import { asset, DOCS_URL } from '../config'
 
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null }
 
 export function Portfolio() {
   const { address, network } = useWallet()
-  const { quests, done, total, rank } = useForgeProgress()
   const reduce = useReducedMotion()
   const [bal, setBal] = useState<Bal>({ state: 'idle', bells: null })
   const [, setActivity] = useState<Activity[]>([])
@@ -47,12 +42,9 @@ export function Portfolio() {
     return (
       <PageItem className="rounded-card border border-ink-600 bg-ink-800/60 p-10 text-center">
         <img src={asset('icons/bound-ingot.png')} alt="" aria-hidden className="pixelated ingot-idle mx-auto mb-4 h-12 w-12" />
-        <p className="text-text-mid">Connect your wallet to begin your forge.</p>
+        <p className="text-text-mid">Connect your wallet to see your portfolio.</p>
         <div className="mt-5 flex justify-center">
           <ConnectWallet />
-        </div>
-        <div className="mx-auto mt-8 max-w-sm text-left">
-          <XPBar done={done} total={total} rankName={rank.name} tier={rank.tier} />
         </div>
       </PageItem>
     )
@@ -98,17 +90,6 @@ export function Portfolio() {
         </div>
       </PageItem>
 
-      <PageItem className="mb-6 rounded-card border border-ink-600 bg-ink-800/60 p-6">
-        <XPBar done={done} total={total} rankName={rank.name} tier={rank.tier} />
-        <div className="mt-5 grid gap-6 sm:grid-cols-[1fr_auto]">
-          <QuestList quests={quests} />
-          <div>
-            <p className="font-micro mb-2 text-[10px] tracking-[0.14em] text-forge-400">MEDALS</p>
-            <MedalShelf quests={quests} />
-          </div>
-        </div>
-      </PageItem>
-
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         <div className="space-y-6">
           <PageItem>
@@ -130,10 +111,10 @@ export function Portfolio() {
                   </tr>
                   <tr>
                     <td colSpan={3} className="p-0">
-                      <QuestEmpty
+                      <ForgeEmpty
                         icon="mold"
-                        title="Forge your first token"
-                        quest="No OP_CAT tokens yet — deploy one and it appears here, minted from its own covenant."
+                        title="No OP_CAT tokens yet"
+                        body="Deploy one and it appears here, minted from its own covenant."
                         to="/app/deploy"
                         cta="Open the forge"
                       />
@@ -147,10 +128,10 @@ export function Portfolio() {
           <PageItem>
             <h3 className="mb-3 font-display text-text-hi">Recent activity</h3>
             <div className="rounded-card border border-ink-600 bg-ink-800/60">
-              <QuestEmpty
+              <ForgeEmpty
                 icon="anvil"
-                title="Your saga starts here"
-                quest="Every signed transaction you broadcast lands here, straight from the chain."
+                title="No transactions yet"
+                body="Every signed transaction you broadcast lands here, straight from the chain."
                 to="/app/trade"
                 cta="Make your first move"
               />

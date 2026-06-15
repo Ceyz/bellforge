@@ -9,7 +9,6 @@ import { SortHeader } from '../components/ui/SortHeader'
 import { Reveal } from '../components/ui/Reveal'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { MoltenBar } from '../components/juice/MoltenBar'
-import { RankFlair } from '../components/juice/RankFlair'
 import { TOKEN_LIST, type TokenInfo } from '../lib/tokens'
 import { asset } from '../config'
 
@@ -48,8 +47,6 @@ export function TokensList() {
     return base
   }, [q, sort, dir, filter])
 
-  const ranked = sort !== 'newest'
-
   const toggleSort = (k: Exclude<SortKey, 'newest'>) => {
     if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else {
@@ -77,7 +74,7 @@ export function TokensList() {
         <HonestBanner>
           Live holder counts and % minted arrive with the P4 deterministic indexer at mainnet. Today every
           value is <span className="font-mono text-text-hi">0</span> or <span className="font-mono text-text-hi">—</span>, never
-          faked. Ranking by these fields is regtest ornament until the indexer lands.
+          faked.
         </HonestBanner>
       </PageItem>
 
@@ -115,7 +112,6 @@ export function TokensList() {
             <table className="w-full text-sm">
               <thead className="border-b border-ink-600 bg-ink-800 text-left">
                 <tr>
-                  <th className="w-10 px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-text-lo">#</th>
                   <th className="px-5 py-3 text-xs font-medium uppercase tracking-wide text-text-lo">Token</th>
                   <th className="px-5 py-3 text-xs font-medium uppercase tracking-wide text-text-lo">Type</th>
                   <th className="px-5 py-3 text-right">
@@ -129,15 +125,12 @@ export function TokensList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-600">
-                {rows.map((t, i) => (
+                {rows.map((t) => (
                   <tr
                     key={t.id}
                     onClick={() => navigate(`/app/token/${t.id}`)}
                     className="cursor-pointer transition hover:bg-ink-700/60"
                   >
-                    <td className="px-4 py-4 text-center">
-                      <RankFlair place={ranked && i < 3 ? ((i + 1) as 1 | 2 | 3) : null} />
-                    </td>
                     <td className="px-5 py-4">
                       <span className="flex items-center gap-2.5">
                         {t.sprite ? (

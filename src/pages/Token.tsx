@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { motion, useInView, useReducedMotion } from 'motion/react'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { PageHeader } from '../components/app/PageHeader'
 import { CountUp } from '../components/ui/CountUp'
 import { Badge } from '../components/ui/Badge'
@@ -8,18 +8,12 @@ import { Reveal } from '../components/ui/Reveal'
 import { LinkButton } from '../components/ui/Button'
 import { MoltenGauge } from '../components/juice/MoltenGauge'
 import { ForgeButton } from '../components/juice/ForgeButton'
-import { markExplored } from '../lib/forge-progress'
 import { asset, PROOF_URL } from '../config'
 import { getToken, type TokenInfo } from '../lib/tokens'
 
 export function Token() {
   const { sym } = useParams<{ sym: string }>()
   const token = getToken(sym)
-
-  // Honest "inspect the anvil" quest: the user really opened a covenant page.
-  useEffect(() => {
-    if (token) markExplored()
-  }, [token])
 
   if (!token) {
     return (

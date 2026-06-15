@@ -1,9 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Crucible } from './Crucible'
 
-/** Gamified empty-state that REPLACES flat "—" / dead empty rows. A small forge
-    glyph (gentle float), a QUEST label, an HONEST one-line reason (you hold none /
-    no txs yet), and an ember CTA. The "mold" variant is an empty molten mold
+/** Forge-themed empty state: a small forge glyph (gentle float), an HONEST title +
+    one-line reason, and an ember CTA. The "mold" variant is an empty molten mold
     ready to fill — honest by metaphor. */
 function Glyph({ icon }: { icon: 'anvil' | 'mold' | 'crucible' }) {
   if (icon === 'crucible') return <Crucible size={92} />
@@ -29,25 +28,24 @@ function Glyph({ icon }: { icon: 'anvil' | 'mold' | 'crucible' }) {
   )
 }
 
-export function QuestEmpty({
+export function ForgeEmpty({
   icon,
   title,
-  quest,
+  body,
   to,
   cta,
 }: {
   icon: 'anvil' | 'mold' | 'crucible'
   title: string
-  quest: string
+  body: string
   to: string
   cta: string
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-8 text-center">
       <Glyph icon={icon} />
-      <p className="font-micro mt-3 text-[10px] tracking-[0.14em] text-forge-400">QUEST</p>
-      <h4 className="font-display mt-1 text-text-hi">{title}</h4>
-      <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-text-mid">{quest}</p>
+      <h4 className="font-display mt-3 text-text-hi">{title}</h4>
+      <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-text-mid">{body}</p>
       <Link
         to={to}
         className="ember-glow-host mt-4 inline-flex items-center justify-center rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-xs font-semibold text-ink-950 shadow-lg shadow-forge-600/25 transition hover:brightness-110"

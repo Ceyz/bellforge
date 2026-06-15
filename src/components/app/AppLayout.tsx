@@ -3,10 +3,6 @@ import { motion } from 'motion/react'
 import { ForgeMark, Wordmark } from '../ui/Brand'
 import { EmberDot } from '../ui/EmberDot'
 import { ConnectWallet } from './ConnectWallet'
-import { Medal } from '../juice/Medal'
-import { LevelUpToast } from '../juice/LevelUpToast'
-import { useLevelUp } from '../juice/useLevelUp'
-import { useForgeProgress } from '../../lib/forge-progress'
 import { AppOutlet } from '../../App'
 
 const NAV = [
@@ -49,11 +45,8 @@ function NavLinks({ idSuffix }: { idSuffix: string }) {
 }
 
 export function AppLayout() {
-  const { rank } = useForgeProgress()
-  const { celebrate, clear } = useLevelUp(rank.name)
   return (
     <div className="flex min-h-screen flex-col">
-      <LevelUpToast show={celebrate} rankName={rank.name} tier={rank.tier} onDone={clear} />
       <header className="sticky top-0 z-30 border-b border-ink-600/70 bg-ink-900/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
           <Link to="/" className="flex items-center gap-2.5">
@@ -64,12 +57,6 @@ export function AppLayout() {
             <NavLinks idSuffix="d" />
           </nav>
           <div className="flex items-center gap-3">
-            <span
-              className="hidden items-center gap-1.5 rounded-full bg-ink-700 px-2.5 py-1 text-xs font-medium text-text-mid ring-1 ring-ink-600 lg:inline-flex"
-              title={`Forge level — ${rank.name} (honest quests on regtest)`}
-            >
-              <Medal tier={rank.tier} size={15} label={`${rank.name} rank`} /> {rank.name}
-            </span>
             <span className="hidden items-center gap-1.5 rounded-full bg-ink-700 px-2.5 py-1 text-xs font-medium text-text-mid ring-1 ring-ink-600 sm:inline-flex">
               <EmberDot /> regtest
             </span>
