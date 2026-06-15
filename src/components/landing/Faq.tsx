@@ -1,4 +1,5 @@
 import { SectionHeading } from '../ui/SectionHeading'
+import { Reveal } from '../ui/Reveal'
 
 const QA: [string, string][] = [
   [
@@ -27,14 +28,14 @@ export function Faq() {
   return (
     <section id="faq" className="mx-auto max-w-3xl px-5 py-16">
       <SectionHeading eyebrow="FAQ" title="Questions, answered plainly." />
-      <div className="mt-8 space-y-3">
+      <Reveal className="mt-8 space-y-3">
         {QA.map(([q, a]) => (
-          <details key={q} className="rounded-card border border-ink-600 bg-ink-800/60 p-5">
+          <details key={q} className="rounded-card border border-ink-600 bg-ink-800/60 p-5 transition hover:border-forge-500/30">
             <summary className="cursor-pointer text-text-hi">{q}</summary>
             <p className="mt-3 text-sm leading-relaxed text-text-mid">{a}</p>
           </details>
         ))}
-      </div>
+      </Reveal>
     </section>
   )
 }

@@ -1,5 +1,6 @@
 import { LinkButton } from '../ui/Button'
 import { SectionHeading } from '../ui/SectionHeading'
+import { Reveal } from '../ui/Reveal'
 import { PROOF_URL } from '../../config'
 
 const POINTS = [
@@ -26,18 +27,20 @@ export function TrustSecurity() {
     <section id="security" className="mx-auto max-w-6xl px-5 py-16">
       <SectionHeading eyebrow="Trust & security" title="Verifiable, not promised." />
       <div className="mt-10 grid gap-4 sm:grid-cols-2">
-        {POINTS.map((p) => (
-          <div key={p.title} className="rounded-card border border-ink-600 bg-ink-800/60 p-6">
-            <h3 className="font-display text-lg text-text-hi">{p.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-text-mid">{p.body}</p>
-          </div>
+        {POINTS.map((p, i) => (
+          <Reveal key={p.title} delay={i * 0.07} className="h-full">
+            <div className="h-full rounded-card border border-ink-600 bg-ink-800/60 p-6 transition duration-300 hover:-translate-y-1 hover:border-forge-500/40 hover:shadow-[0_0_34px_-10px_rgba(255,76,0,0.45)]">
+              <h3 className="font-display text-lg text-text-hi">{p.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-text-mid">{p.body}</p>
+            </div>
+          </Reveal>
         ))}
       </div>
-      <div className="mt-8 text-center">
+      <Reveal className="mt-8 text-center">
         <LinkButton href={PROOF_URL} variant="secondary">
           View the on-chain proof
         </LinkButton>
-      </div>
+      </Reveal>
     </section>
   )
 }

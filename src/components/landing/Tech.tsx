@@ -1,5 +1,6 @@
 import { LinkButton } from '../ui/Button'
 import { SectionHeading } from '../ui/SectionHeading'
+import { Reveal } from '../ui/Reveal'
 import { DOCS_URL } from '../../config'
 
 const ITEMS = [
@@ -21,19 +22,19 @@ export function Tech() {
         title="Soundness, enforced by the coin’s own script."
         lead="The supply can’t be inflated — it’s enforced on-chain, not by us."
       />
-      <div className="mt-8 space-y-3">
+      <Reveal className="mt-8 space-y-3">
         {ITEMS.map((it) => (
-          <details key={it.q} className="rounded-card border border-ink-600 bg-ink-800/60 p-5">
+          <details key={it.q} className="rounded-card border border-ink-600 bg-ink-800/60 p-5 transition hover:border-forge-500/30">
             <summary className="cursor-pointer font-display text-text-hi">{it.q}</summary>
             <p className="mt-3 text-sm leading-relaxed text-text-mid">{it.a}</p>
           </details>
         ))}
-      </div>
-      <div className="mt-6 text-center">
-        <LinkButton href={DOCS_URL} variant="secondary">
-          Read the docs
-        </LinkButton>
-      </div>
+        <div className="pt-2 text-center">
+          <LinkButton href={DOCS_URL} variant="secondary">
+            Read the docs
+          </LinkButton>
+        </div>
+      </Reveal>
     </section>
   )
 }
