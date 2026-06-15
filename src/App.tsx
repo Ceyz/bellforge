@@ -4,6 +4,7 @@ import { Landing } from './pages/Landing'
 import { AppLayout } from './components/app/AppLayout'
 import { Portfolio } from './pages/Portfolio'
 import { Token } from './pages/Token'
+import { TokensList } from './pages/TokensList'
 import { Mint } from './pages/Mint'
 import { Trade } from './pages/Trade'
 import { Pools } from './pages/Pools'
@@ -39,7 +40,8 @@ export default function App() {
         />
         <Route path="/app" element={<AppLayout />}>
           <Route index element={<Portfolio />} />
-          <Route path="token" element={<Token />} />
+          <Route path="token" element={<TokensList />} />
+          <Route path="token/:sym" element={<Token />} />
           <Route path="mint" element={<Mint />} />
           <Route path="trade" element={<Trade />} />
           <Route path="pools" element={<Pools />} />

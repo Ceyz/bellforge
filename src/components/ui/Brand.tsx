@@ -8,9 +8,11 @@ export function ForgeMark({ className = 'h-7 w-7' }: { className?: string }) {
   )
 }
 
+/** Clean modern wordmark (Inter, not the pixel face — that stays for hero
+    headlines only). "forge" in ember. */
 export function Wordmark() {
   return (
-    <span className="font-display text-lg tracking-tight text-text-hi">
+    <span className="text-[17px] font-semibold tracking-tight text-text-hi">
       Bell<span className="text-forge-400">forge</span>
     </span>
   )

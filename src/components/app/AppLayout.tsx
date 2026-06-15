@@ -7,7 +7,7 @@ import { AppOutlet } from '../../App'
 
 const NAV = [
   { to: '/app', label: 'Portfolio', end: true },
-  { to: '/app/token', label: '$BOUND', end: false },
+  { to: '/app/token', label: 'Tokens', end: false },
   { to: '/app/mint', label: 'Mint', end: false },
   { to: '/app/trade', label: 'Trade', end: false },
   { to: '/app/pools', label: 'Pools', end: false },
