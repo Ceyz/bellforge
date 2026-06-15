@@ -2,7 +2,7 @@ import { LinkButton } from '../ui/Button'
 import { SectionHeading } from '../ui/SectionHeading'
 import { Reveal } from '../ui/Reveal'
 import { Disclosure } from '../juice/Disclosure'
-import { DOCS_URL } from '../../config'
+import { GITHUB_URL } from '../../config'
 
 const ITEMS = [
   {
@@ -30,8 +30,8 @@ export function Tech() {
           </Disclosure>
         ))}
         <div className="pt-2 text-center">
-          <LinkButton href={DOCS_URL} variant="secondary">
-            Read the docs
+          <LinkButton href={GITHUB_URL} target="_blank" rel="noopener noreferrer" variant="secondary">
+            See the code
           </LinkButton>
         </div>
       </Reveal>

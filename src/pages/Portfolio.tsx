@@ -9,7 +9,7 @@ import { LinkButton } from '../components/ui/Button'
 import { EmberDot } from '../components/ui/EmberDot'
 import { OdometerNumber } from '../components/juice/OdometerNumber'
 import { ForgeEmpty } from '../components/juice/ForgeEmpty'
-import { asset, DOCS_URL } from '../config'
+import { asset, DOCS_URL, explorerAddress } from '../config'
 
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null }
 
@@ -85,7 +85,15 @@ export function Portfolio() {
             <span className="text-xl text-text-mid">BELLS</span>
           </p>
           <p className="mt-1 break-all text-xs text-text-lo">
-            regtest · zero real value{network ? ` · ${network}` : ''} · {address}
+            regtest · zero real value{network ? ` · ${network}` : ''} ·{' '}
+            <a
+              href={explorerAddress(address)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-mid underline-offset-2 transition hover:text-forge-400 hover:underline"
+            >
+              {address}
+            </a>
           </p>
         </div>
       </PageItem>

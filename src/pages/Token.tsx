@@ -1,14 +1,16 @@
 import { Link, useParams } from 'react-router-dom'
 import { motion, useInView, useReducedMotion } from 'motion/react'
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PageHeader } from '../components/app/PageHeader'
 import { CountUp } from '../components/ui/CountUp'
 import { Badge } from '../components/ui/Badge'
 import { Reveal } from '../components/ui/Reveal'
 import { LinkButton } from '../components/ui/Button'
+import { EmberDot } from '../components/ui/EmberDot'
 import { MoltenGauge } from '../components/juice/MoltenGauge'
 import { ForgeButton } from '../components/juice/ForgeButton'
-import { asset, PROOF_URL } from '../config'
+import { fetchChainTip, type ChainTip } from '../lib/chain'
+import { asset, EXPLORER, PROOF_URL } from '../config'
 import { getToken, type TokenInfo } from '../lib/tokens'
 
 export function Token() {
@@ -49,7 +51,10 @@ export function Token() {
             <GuaranteesSection token={token} />
           </>
         ) : (
-          <AboutSection token={token} />
+          <>
+            <NativeLive />
+            <AboutSection token={token} />
+          </>
         )}
 
         <HonestFooter token={token} />
@@ -239,6 +244,70 @@ function AboutSection({ token }: { token: TokenInfo }) {
         ))}
       </dl>
     </Reveal>
+  )
+}
+
+function ago(sec: number) {
+  const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
+  if (d < 60) return `${d}s ago`
+  if (d < 3600) return `${Math.floor(d / 60)}m ago`
+  if (d < 86400) return `${Math.floor(d / 3600)}h ago`
+  return `${Math.floor(d / 86400)}d ago`
+}
+
+/** Real, live Bellscoin network stats from electrs — shown on the native $BELLS
+    page while OP_CAT token indexing is still being built. Honest: only data the
+    chain actually returns; nothing fabricated. */
+function NativeLive() {
+  const [tip, setTip] = useState<ChainTip | null>(null)
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
+  useEffect(() => {
+    let alive = true
+    fetchChainTip('mainnet').then((r) => {
+      if (!alive) return
+      if ('error' in r) setState('error')
+      else {
+        setTip(r)
+        setState('ok')
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  return (
+    <Reveal className="rounded-card border border-ink-600 bg-ink-800/60 p-6">
+      <div className="flex items-center justify-between">
+        <SectionLabel>Live on Bellscoin</SectionLabel>
+        <span className="flex items-center gap-1.5 font-micro text-[10px] uppercase tracking-wide text-text-lo">
+          <EmberDot /> mainnet
+        </span>
+      </div>
+      {state === 'error' ? (
+        <p className="mt-4 text-sm text-text-mid">Network stats are unavailable right now.</p>
+      ) : (
+        <dl className="mt-4 grid gap-px overflow-hidden rounded-well border border-ink-600 bg-ink-600 sm:grid-cols-3">
+          <Stat k="Block height" v={tip ? tip.height.toLocaleString() : '…'} note="Current chain tip" />
+          <Stat k="Last block" v={tip ? ago(tip.time) : '…'} note="Time since the tip" />
+          <Stat k="Txs in tip" v={tip ? tip.txCount.toLocaleString() : '…'} note="Transactions in the latest block" />
+        </dl>
+      )}
+      <div className="mt-5">
+        <LinkButton href={`${EXPLORER}/blocks`} target="_blank" rel="noopener noreferrer" variant="secondary" className="text-xs">
+          Open the block explorer →
+        </LinkButton>
+      </div>
+    </Reveal>
+  )
+}
+
+function Stat({ k, v, note }: { k: string; v: string; note: string }) {
+  return (
+    <div className="heat-card bg-ink-800 p-4">
+      <dt className="text-xs text-text-lo">{k}</dt>
+      <dd className="mt-0.5 font-mono text-lg text-text-hi">{v}</dd>
+      <dd className="mt-0.5 text-xs text-text-mid">{note}</dd>
+    </div>
   )
 }
 

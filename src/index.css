@@ -93,6 +93,10 @@ body::after {
   image-rendering: pixelated;
 }
 
+/* Hide the scrollbar but keep scroll/swipe (mobile nav). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* Animated ember shimmer across the hero headline. */
 @keyframes ember-shimmer {
   0%,

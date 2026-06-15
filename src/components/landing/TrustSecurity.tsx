@@ -6,7 +6,7 @@ import { PROOF_URL } from '../../config'
 const POINTS = [
   {
     title: 'Verifiable on-chain proof',
-    body: 'Check the anti-inflation covenant on the regtest explorer yourself — behaviour beats a badge.',
+    body: 'Open the live Bellscoin chain on the block explorer yourself — behaviour beats a badge.',
   },
   {
     title: 'Open source',

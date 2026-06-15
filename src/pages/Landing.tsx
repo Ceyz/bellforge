@@ -19,7 +19,7 @@ import { TrustSecurity } from '../components/landing/TrustSecurity'
 import { Tech } from '../components/landing/Tech'
 import { Faq } from '../components/landing/Faq'
 import { FinalCta } from '../components/landing/FinalCta'
-import { GAME_URL, asset } from '../config'
+import { GAME_URL, GITHUB_URL, asset } from '../config'
 
 const NAV = ['Ecosystem', 'Security', 'Tech'] as const
 
@@ -149,6 +149,7 @@ function Footer() {
           <Link to="/app" className="transition hover:text-text-hi">App</Link>
           <a href={GAME_URL} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">Play</a>
           <a href="#ecosystem" className="transition hover:text-text-hi">Ecosystem</a>
+          <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">GitHub</a>
         </nav>
         <p>Built on OP_CAT · Bellscoin · regtest preview</p>
       </div>

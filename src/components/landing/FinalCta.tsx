@@ -1,7 +1,7 @@
 import { LinkButton } from '../ui/Button'
 import { Reveal } from '../ui/Reveal'
 import { EmberCanvas } from './EmberCanvas'
-import { GAME_URL, DOCS_URL } from '../../config'
+import { GAME_URL, GITHUB_URL } from '../../config'
 
 export function FinalCta() {
   return (
@@ -28,8 +28,8 @@ export function FinalCta() {
               >
                 Play the game
               </LinkButton>
-              <LinkButton href={DOCS_URL} variant="secondary">
-                Read the docs · see the code
+              <LinkButton href={GITHUB_URL} target="_blank" rel="noopener noreferrer" variant="secondary">
+                See the code
               </LinkButton>
             </div>
           </div>

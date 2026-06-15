@@ -63,7 +63,7 @@ export function AppLayout() {
             <ConnectWallet />
           </div>
         </div>
-        <nav className="flex items-center gap-1 overflow-x-auto px-5 pb-2 md:hidden">
+        <nav className="no-scrollbar flex items-center gap-1 overflow-x-auto px-5 pb-2 md:hidden">
           <NavLinks idSuffix="m" />
         </nav>
       </header>
