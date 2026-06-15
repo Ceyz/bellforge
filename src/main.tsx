@@ -1,5 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { HashRouter } from 'react-router-dom'
+import { WalletProvider } from './wallet/WalletProvider'
 import '@fontsource-variable/pixelify-sans/index.css'
 import '@fontsource-variable/inter/index.css'
 import '@fontsource/ibm-plex-mono/400.css'
@@ -9,6 +11,10 @@ import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <HashRouter>
+      <WalletProvider>
+        <App />
+      </WalletProvider>
+    </HashRouter>
   </StrictMode>,
 )

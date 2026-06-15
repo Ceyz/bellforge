@@ -10,7 +10,7 @@ const ITEMS = [
   },
   {
     q: 'How is anti-inflation enforced?',
-    a: 'Every transfer reconstructs and binds its own outputs: what leaves equals what was proven to enter (conservation by construction). An inflated output simply fails to validate at consensus. An independent indexer re-checks the same rule as defense-in-depth.',
+    a: 'A token’s supply is fixed at genesis (the minter is one-shot, then spent). Every later transfer reconstructs and binds its own outputs so what leaves equals what was proven to enter — an inflated output fails to validate at consensus. This holds as long as the covenant is correct, which is exactly what the audit checks; an independent indexer re-verifies the same rule as defense-in-depth.',
   },
 ]
 

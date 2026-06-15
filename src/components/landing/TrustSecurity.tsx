@@ -17,8 +17,8 @@ const POINTS = [
     body: 'An external audit is scheduled before mainnet. No fake badge — we link the report when it exists.',
   },
   {
-    title: 'Sound by construction',
-    body: 'Supply can’t be inflated and tokens can’t be stolen — the coin’s own script enforces it at consensus.',
+    title: 'Fixed at genesis',
+    body: 'A token’s supply cap is set once, its minter is one-shot, and every transfer conserves it on-chain — so it can’t be inflated after genesis. Correctness is what the external audit verifies.',
   },
 ]
 
