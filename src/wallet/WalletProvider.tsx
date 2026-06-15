@@ -1,15 +1,52 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 
-type NintondoApi = {
-  requestAccounts?: () => Promise<string[]>
-  connect?: () => Promise<{ address?: string } | string[]>
-  getAccounts?: () => Promise<string[]>
+/** The subset of window.nintondo we use. API confirmed against extension v0.3.10
+    (from the Bellbound/Islebound integration): there is NO requestAccounts /
+    getAccounts — connect via connect() then getAccount(). getNetwork() is
+    unreliable. The extension injects ASYNC after page load, so we must poll. */
+interface NintondoProvider {
+  connect: (network?: string) => Promise<unknown>
+  getAccount?: () => Promise<unknown>
+  disconnect?: () => Promise<void>
 }
 
 declare global {
   interface Window {
-    nintondo?: NintondoApi
+    nintondo?: NintondoProvider
   }
+}
+
+/** Pull an address out of whatever connect()/getAccount() returns. */
+function pickAddress(value: unknown): string | null {
+  if (!value) return null
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return pickAddress(value[0])
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>
+    for (const k of ['address', 'account', 'selectedAddress']) {
+      if (typeof o[k] === 'string') return o[k] as string
+    }
+  }
+  return null
+}
+
+/** The Nintondo extension injects window.nintondo asynchronously after load —
+    poll for it (a reactive check, not a one-shot `!!window.nintondo` at render). */
+function waitForWallet(timeoutMs = 3000): Promise<NintondoProvider | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve(null)
+    if (window.nintondo) return resolve(window.nintondo)
+    const start = Date.now()
+    const id = window.setInterval(() => {
+      if (window.nintondo) {
+        window.clearInterval(id)
+        resolve(window.nintondo)
+      } else if (Date.now() - start > timeoutMs) {
+        window.clearInterval(id)
+        resolve(null)
+      }
+    }, 250)
+  })
 }
 
 type WalletState = {
@@ -25,26 +62,34 @@ const Ctx = createContext<WalletState | null>(null)
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
-  const available = typeof window !== 'undefined' && !!window.nintondo
+  const [available, setAvailable] = useState(false)
+
+  // Detect the async-injected extension so the button reflects reality.
+  useEffect(() => {
+    let alive = true
+    waitForWallet().then((p) => {
+      if (alive && p) setAvailable(true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const connect = useCallback(async () => {
-    const w = typeof window !== 'undefined' ? window.nintondo : undefined
-    if (!w) {
-      window.open('https://nintondo.io', '_blank', 'noopener')
-      return
-    }
     setConnecting(true)
     try {
-      let accts: string[] | undefined
-      if (typeof w.requestAccounts === 'function') accts = await w.requestAccounts()
-      else if (typeof w.getAccounts === 'function') accts = await w.getAccounts()
-      else if (typeof w.connect === 'function') {
-        const r = await w.connect()
-        accts = Array.isArray(r) ? r : r?.address ? [r.address] : undefined
+      const p = await waitForWallet()
+      if (!p) {
+        window.open('https://nintondo.io', '_blank', 'noopener')
+        return
       }
-      if (accts && accts.length) setAddress(accts[0])
+      setAvailable(true)
+      const result = await p.connect()
+      let addr = pickAddress(result)
+      if (!addr && p.getAccount) addr = pickAddress(await p.getAccount())
+      if (addr) setAddress(addr)
     } catch {
-      /* user rejected or API mismatch — stay disconnected */
+      /* user rejected the popup — stay disconnected */
     } finally {
       setConnecting(false)
     }
