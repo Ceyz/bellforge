@@ -8,6 +8,7 @@ export function RouteCard({
   status,
   price,
   slippage,
+  note,
   selected,
   disabled,
   onSelect,
@@ -15,8 +16,9 @@ export function RouteCard({
   id: RouteId
   title: string
   status: Status
-  price: string
-  slippage: string
+  price?: string
+  slippage?: string
+  note?: string
   selected: boolean
   disabled?: boolean
   onSelect: (id: RouteId) => void
@@ -40,16 +42,20 @@ export function RouteCard({
         <span className={`text-sm font-medium ${disabled ? 'text-text-mid' : 'text-text-hi'}`}>{title}</span>
         <StatusPill status={status} />
       </div>
-      <dl className="mt-3 space-y-1 font-mono text-xs">
-        <div className="flex justify-between">
-          <dt className="text-text-lo">Est. price</dt>
-          <dd className="text-text-hi">{price}</dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-text-lo">Slippage</dt>
-          <dd className="text-text-hi">{slippage}</dd>
-        </div>
-      </dl>
+      {note ? (
+        <p className="mt-3 text-xs leading-relaxed text-text-lo">{note}</p>
+      ) : (
+        <dl className="mt-3 space-y-1 font-mono text-xs">
+          <div className="flex justify-between">
+            <dt className="text-text-lo">Est. price</dt>
+            <dd className="text-text-hi">{price}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-text-lo">Slippage</dt>
+            <dd className="text-text-hi">{slippage}</dd>
+          </div>
+        </dl>
+      )}
       {selected && !disabled && <p className="mt-2 text-[11px] font-medium text-forge-400">✓ Best execution</p>}
     </motion.button>
   )

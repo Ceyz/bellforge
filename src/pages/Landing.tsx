@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import { LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { ForgeCard } from '../components/juice/ForgeCard'
 import { StatusPill, type Status } from '../components/ui/StatusPill'
 import { Badge } from '../components/ui/Badge'
 import { PixelIcon } from '../components/ui/PixelIcon'
@@ -24,7 +26,7 @@ const NAV = ['Ecosystem', 'Security', 'Tech'] as const
 type Surface = { title: string; blurb: string; backed: string; status: Status; sprite: string; to: string }
 
 const SURFACES: Surface[] = [
-  { title: 'Mint', blurb: 'Forge a new OP_CAT token — fixed supply, on-chain mint fee, anti-inflation at consensus. $BOUND was the first.', backed: 'covenant minter', status: 'live-regtest', sprite: 'icons/surface-mint.png', to: '/app/mint' },
+  { title: 'Deploy', blurb: 'Forge a new OP_CAT token — fixed supply, on-chain mint fee, anti-inflation at consensus. Holders mint their share next. $BOUND was the first.', backed: 'covenant minter', status: 'live-regtest', sprite: 'icons/surface-mint.png', to: '/app/deploy' },
   { title: 'Trade', blurb: 'Swap $BELLS, $BOUND and any OP_CAT token via signed PSBT atomic orders — no custody, no AMM trust.', backed: 'PSBT atomic swap', status: 'soon', sprite: 'icons/surface-trade.png', to: '/app/trade' },
   { title: 'Pools', blurb: 'Provide liquidity for any pair — CSFS-oracle pools on the covenant substrate, quote-bound and block-aware.', backed: 'CSFS oracle pools', status: 'rnd', sprite: 'icons/surface-pools.png', to: '/app/pools' },
   { title: 'Lend', blurb: 'Borrow against $BELLS or token collateral — native covenant composition, not an indexer-trusted ledger.', backed: 'covenant collateral', status: 'rnd', sprite: 'icons/surface-lend.png', to: '/app/lend' },
@@ -44,7 +46,7 @@ function Header() {
               {item}
             </a>
           ))}
-          <Link to="/app/mint" className="rounded-btn px-3.5 py-2 text-sm font-medium text-text-mid transition hover:bg-ink-700/70 hover:text-text-hi">
+          <Link to="/app" className="rounded-btn px-3.5 py-2 text-sm font-medium text-text-mid transition hover:bg-ink-700/70 hover:text-text-hi">
             App
           </Link>
         </nav>
@@ -75,7 +77,7 @@ function Hero() {
           enforced on-chain, not by us.
         </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Link to="/app/mint" className="inline-flex items-center justify-center rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-6 py-3 text-sm font-semibold text-ink-950 shadow-[0_0_28px_-6px_rgba(255,76,0,0.55)] transition hover:brightness-110">
+          <Link to="/app" className="ember-glow-host heat-breathe inline-flex items-center justify-center rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-6 py-3 text-sm font-semibold text-ink-950 shadow-[0_0_28px_-6px_rgba(255,76,0,0.55)] transition hover:brightness-110">
             Launch app
           </Link>
           <LinkButton href={GAME_URL} target="_blank" rel="noopener noreferrer" variant="secondary" className="px-6 py-3">
@@ -107,17 +109,19 @@ function SurfaceGrid() {
         {SURFACES.map((s, i) => (
           <Reveal key={s.title} delay={i * 0.07} className="h-full">
             <Link to={s.to} className="block h-full">
-              <Card id={s.title.toLowerCase()} className="h-full scroll-mt-20 transition duration-300 hover:-translate-y-1 hover:border-forge-500/40 hover:shadow-[0_0_34px_-10px_rgba(255,76,0,0.45)]">
-                <div className="flex items-start justify-between">
-                  <PixelIcon src={asset(s.sprite)} alt={`${s.title} icon`} native={64} />
-                  <StatusPill status={s.status} />
-                </div>
-                <h3 className="font-display mt-4 text-xl text-text-hi">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-mid">{s.blurb}</p>
-                <p className="mt-3 text-xs text-text-lo">
-                  Backed by <span className="font-mono text-text-mid">{s.backed}</span>
-                </p>
-              </Card>
+              <ForgeCard spark className="h-full">
+                <Card id={s.title.toLowerCase()} className="h-full scroll-mt-20 duration-300 hover:border-forge-500/40 hover:shadow-[0_0_34px_-10px_rgba(255,76,0,0.45)]">
+                  <div className="flex items-start justify-between">
+                    <PixelIcon src={asset(s.sprite)} alt={`${s.title} icon`} native={64} />
+                    <StatusPill status={s.status} />
+                  </div>
+                  <h3 className="font-display mt-4 text-xl text-text-hi">{s.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-text-mid">{s.blurb}</p>
+                  <p className="mt-3 text-xs text-text-lo">
+                    Backed by <span className="font-mono text-text-mid">{s.backed}</span>
+                  </p>
+                </Card>
+              </ForgeCard>
             </Link>
           </Reveal>
         ))}
@@ -127,15 +131,22 @@ function SurfaceGrid() {
 }
 
 function Footer() {
+  const reduce = useReducedMotion()
   return (
     <footer className="border-t border-ink-600/70">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-7 text-sm text-text-lo sm:flex-row">
         <div className="flex items-center gap-2.5">
-          <img src={asset('brand/billy-mascot-64.png')} alt="Billy, the Bellforge blacksmith" className="pixelated h-8 w-8" />
+          <motion.img
+            src={asset('brand/billy-mascot-64.png')}
+            alt="Billy, the Bellforge blacksmith"
+            className="pixelated h-8 w-8 origin-bottom cursor-pointer"
+            whileHover={reduce ? undefined : { rotate: [0, -10, 10, -6, 0] }}
+            transition={{ duration: 0.6 }}
+          />
           <Wordmark />
         </div>
         <nav className="flex items-center gap-5">
-          <Link to="/app/mint" className="transition hover:text-text-hi">App</Link>
+          <Link to="/app" className="transition hover:text-text-hi">App</Link>
           <a href={GAME_URL} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">Play</a>
           <a href="#ecosystem" className="transition hover:text-text-hi">Ecosystem</a>
         </nav>

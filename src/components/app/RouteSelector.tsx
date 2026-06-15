@@ -35,8 +35,7 @@ export function RouteSelector({ amountIn, onRoute }: { amountIn: number; onRoute
           id="pool"
           title="Liquidity pool"
           status="soon"
-          price="—"
-          slippage="—"
+          note="Quotes appear once covenant pools launch — no simulated price shown."
           disabled
           selected={selected === 'pool'}
           onSelect={() => setManual('pool')}

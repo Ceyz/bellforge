@@ -1,5 +1,6 @@
 import { SectionHeading } from '../ui/SectionHeading'
 import { Reveal } from '../ui/Reveal'
+import { Disclosure } from '../juice/Disclosure'
 
 const QA: [string, string][] = [
   [
@@ -30,10 +31,9 @@ export function Faq() {
       <SectionHeading eyebrow="FAQ" title="Questions, answered plainly." />
       <Reveal className="mt-8 space-y-3">
         {QA.map(([q, a]) => (
-          <details key={q} className="rounded-card border border-ink-600 bg-ink-800/60 p-5 transition hover:border-forge-500/30">
-            <summary className="cursor-pointer text-text-hi">{q}</summary>
-            <p className="mt-3 text-sm leading-relaxed text-text-mid">{a}</p>
-          </details>
+          <Disclosure key={q} summary={q}>
+            {a}
+          </Disclosure>
         ))}
       </Reveal>
     </section>

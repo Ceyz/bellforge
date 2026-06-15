@@ -1,11 +1,11 @@
-import { useLocation, useOutlet, Routes, Route } from 'react-router-dom'
+import { useLocation, useOutlet, Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'motion/react'
 import { Landing } from './pages/Landing'
 import { AppLayout } from './components/app/AppLayout'
 import { Portfolio } from './pages/Portfolio'
 import { Token } from './pages/Token'
 import { TokensList } from './pages/TokensList'
-import { Mint } from './pages/Mint'
+import { Deploy } from './pages/Deploy'
 import { Trade } from './pages/Trade'
 import { Pools } from './pages/Pools'
 import { Lend } from './pages/Lend'
@@ -27,36 +27,51 @@ export default function App() {
   const sectionKey = location.pathname.startsWith('/app') ? 'app' : 'landing'
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      {/* The key drives mount/unmount; Routes still matches on the real location. */}
-      <Routes location={location} key={sectionKey}>
-        <Route
-          path="/"
-          element={
-            <PageTransition stagger={false}>
-              <Landing />
-            </PageTransition>
-          }
-        />
+    <>
+      {/* Shared molten gradient — referenced as url(#molten-fill) by MoltenGauge,
+          Crucible, etc. without each re-defining it. Zero-size, off-screen. */}
+      <svg aria-hidden width="0" height="0" className="absolute" style={{ position: 'absolute' }}>
+        <defs>
+          <linearGradient id="molten-fill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="var(--color-forge-600)" />
+            <stop offset="0.5" stopColor="var(--color-forge-500)" />
+            <stop offset="1" stopColor="var(--color-bell-300)" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <AnimatePresence mode="wait" initial={false}>
+        {/* The key drives mount/unmount; Routes still matches on the real location. */}
+        <Routes location={location} key={sectionKey}>
+          <Route
+            path="/"
+            element={
+              <PageTransition stagger={false}>
+                <Landing />
+              </PageTransition>
+            }
+          />
         <Route path="/app" element={<AppLayout />}>
           <Route index element={<Portfolio />} />
           <Route path="token" element={<TokensList />} />
           <Route path="token/:sym" element={<Token />} />
-          <Route path="mint" element={<Mint />} />
+          <Route path="deploy" element={<Deploy />} />
+          {/* legacy /app/mint bookmarks → the renamed Deploy page */}
+          <Route path="mint" element={<Navigate to="/app/deploy" replace />} />
           <Route path="trade" element={<Trade />} />
           <Route path="pools" element={<Pools />} />
           <Route path="lend" element={<Lend />} />
         </Route>
-        <Route
-          path="*"
-          element={
-            <PageTransition stagger={false}>
-              <Landing />
-            </PageTransition>
-          }
-        />
-      </Routes>
-    </AnimatePresence>
+          <Route
+            path="*"
+            element={
+              <PageTransition stagger={false}>
+                <Landing />
+              </PageTransition>
+            }
+          />
+        </Routes>
+      </AnimatePresence>
+    </>
   )
 }
 

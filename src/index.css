@@ -139,6 +139,83 @@ body::after {
 }
 .ember-glow-host:hover::after { opacity: 0.85; }
 
+/* ================================================================
+   JUICE SYSTEM — forge motion language.
+   Namespaces: forge-* mold-* heat-* ingot-* rune-* crucible-*
+   GPU-only (transform/opacity/filter/background-position/box-shadow-on-hover).
+   Auto-gated by the reduced-motion block below (keep that block LAST). ======= */
+
+/* Brand flame flicker (organic, non-strobing). */
+@keyframes heat-flicker {
+  0%   { opacity: 0.82; transform: translateY(0) scaleY(1); }
+  18%  { opacity: 1;    transform: translateY(-0.3px) scaleY(1.04); }
+  41%  { opacity: 0.9;  transform: translateY(0.2px) scaleY(0.98); }
+  63%  { opacity: 1;    transform: translateY(-0.4px) scaleY(1.05); }
+  84%  { opacity: 0.88; transform: translateY(0) scaleY(1); }
+  100% { opacity: 0.82; transform: translateY(0) scaleY(1); }
+}
+.flame-flicker > * { transform-origin: 50% 90%; animation: heat-flicker 2.6s ease-in-out infinite; will-change: transform, opacity; }
+
+/* Empty-mold "ready to pour" rim breathe — honest 0% state (gauge/bar/XP). */
+@keyframes mold-rim-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.75; } }
+.mold-rim-pulse { animation: mold-rim-pulse 2.8s ease-in-out infinite; }
+
+/* Rising molten bubble (crucible surface). */
+@keyframes mold-bubble {
+  0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+  20%  { opacity: 0.9; }
+  100% { transform: translateY(-22px) scale(1); opacity: 0; }
+}
+
+/* Forge temperature glow pulse (token mark idle, crucible heat). */
+@keyframes heat-breathe {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(255,76,0,0.25)); }
+  50%      { filter: drop-shadow(0 0 14px rgba(255,178,77,0.55)); }
+}
+.heat-breathe { animation: heat-breathe 3.4s ease-in-out infinite; }
+
+/* Gold-ingot idle bob + glow (empty-state mascot). */
+@keyframes ingot-bob  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes ingot-glow { 0%, 100% { filter: drop-shadow(0 0 6px rgba(224,168,16,0.35)); } 50% { filter: drop-shadow(0 0 16px rgba(255,210,74,0.6)); } }
+.ingot-idle { animation: ingot-bob 3.8s ease-in-out infinite, ingot-glow 3.8s ease-in-out infinite; }
+
+/* R&D crucible gentle bob. */
+@keyframes crucible-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.crucible-bob { animation: crucible-bob 3.6s ease-in-out infinite; }
+
+/* Molten surface shimmer (crucible pool). */
+@keyframes mold-shimmer { 0%, 100% { transform: translateX(-6%); } 50% { transform: translateX(6%); } }
+.mold-shimmer { animation: mold-shimmer 3.2s ease-in-out infinite; }
+
+/* Odometer change glow — one-shot, applied via class toggle from OdometerNumber. */
+@keyframes odometer-glow {
+  0%   { text-shadow: 0 0 0 rgba(255,76,0,0); }
+  30%  { text-shadow: 0 0 14px rgba(255,76,0,0.65); }
+  100% { text-shadow: 0 0 0 rgba(255,76,0,0); }
+}
+.odometer-glow { animation: odometer-glow 0.6s ease-out 1; }
+
+/* Etched rune sigil — faint glow pulse, never moves (decorative). */
+@keyframes rune-pulse { 0%, 100% { opacity: 0.12; } 50% { opacity: 0.3; } }
+.rune-etch { animation: rune-pulse 4.2s ease-in-out infinite; }
+
+/* Card ember-bloom on hover (ForgeCard). Border lift/spark handled in JS/Tailwind. */
+.heat-card { position: relative; isolation: isolate; }
+.heat-card::after {
+  content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit;
+  background: radial-gradient(80% 60% at 50% 0%, rgba(255,76,0,0.18), transparent 70%);
+  opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+}
+.heat-card:hover::after { opacity: 1; }
+
+/* Shared ember focus-glow for inputs / wells. */
+.input-forge { transition: border-color .2s ease, box-shadow .25s ease, background-color .2s ease; }
+.input-forge:focus, .input-forge:focus-within {
+  border-color: rgba(255,76,0,0.5) !important;
+  box-shadow: 0 0 0 3px rgba(255,76,0,0.12), 0 0 18px -6px rgba(255,76,0,0.55);
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

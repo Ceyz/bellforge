@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import { useWallet } from '../wallet/WalletProvider'
 import { fetchBellsBalance, fetchActivity, type Activity } from '../lib/chain'
+import { useForgeProgress } from '../lib/forge-progress'
 import { ConnectWallet } from '../components/app/ConnectWallet'
 import { PageHeader } from '../components/app/PageHeader'
 import { PageItem } from '../components/ui/PageTransition'
 import { LinkButton } from '../components/ui/Button'
 import { EmberDot } from '../components/ui/EmberDot'
+import { OdometerNumber } from '../components/juice/OdometerNumber'
+import { XPBar } from '../components/juice/XPBar'
+import { QuestList } from '../components/juice/QuestList'
+import { MedalShelf } from '../components/juice/MedalShelf'
+import { QuestEmpty } from '../components/juice/QuestEmpty'
 import { asset, DOCS_URL } from '../config'
 
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null }
 
 export function Portfolio() {
   const { address, network } = useWallet()
+  const { quests, done, total, rank } = useForgeProgress()
+  const reduce = useReducedMotion()
   const [bal, setBal] = useState<Bal>({ state: 'idle', bells: null })
   const [, setActivity] = useState<Activity[]>([])
 
@@ -38,10 +46,13 @@ export function Portfolio() {
   if (!address) {
     return (
       <PageItem className="rounded-card border border-ink-600 bg-ink-800/60 p-10 text-center">
-        <img src={asset('icons/bound-ingot.png')} alt="" aria-hidden className="pixelated mx-auto mb-4 h-12 w-12 opacity-80" />
-        <p className="text-text-mid">Connect your wallet to see your portfolio.</p>
+        <img src={asset('icons/bound-ingot.png')} alt="" aria-hidden className="pixelated ingot-idle mx-auto mb-4 h-12 w-12" />
+        <p className="text-text-mid">Connect your wallet to begin your forge.</p>
         <div className="mt-5 flex justify-center">
           <ConnectWallet />
+        </div>
+        <div className="mx-auto mt-8 max-w-sm text-left">
+          <XPBar done={done} total={total} rankName={rank.name} tier={rank.tier} />
         </div>
       </PageItem>
     )
@@ -61,19 +72,40 @@ export function Portfolio() {
   return (
     <>
       <PageItem>
-        <PageHeader title="Portfolio" subtitle="Your $BELLS and OP_CAT token balances on Bellscoin." />
+        <PageHeader title="Portfolio" subtitle="Your $BELLS, your forge level and every move you make on Bellscoin." />
       </PageItem>
 
       <PageItem className="relative mb-6 overflow-hidden rounded-card border border-ink-600 bg-gradient-to-b from-ink-800 to-ink-900 p-7">
-        <div aria-hidden className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-forge-500/10 blur-3xl" />
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-forge-500/10 blur-3xl"
+          animate={reduce ? {} : { opacity: [0.6, 1, 0.6], scale: [1, 1.08, 1] }}
+          transition={{ duration: 6, ease: 'easeInOut', repeat: Infinity }}
+        />
         <div className="relative">
           <p className="flex items-center gap-1.5 text-xs text-text-lo">Total value {live && <EmberDot />}</p>
           <p className="mt-1 font-mono text-4xl text-text-hi">
-            {balText} <span className="text-xl text-text-mid">BELLS</span>
+            {live ? (
+              <OdometerNumber value={bal.bells ?? 0} decimals={8} className="font-mono text-4xl text-text-hi" />
+            ) : (
+              balText
+            )}{' '}
+            <span className="text-xl text-text-mid">BELLS</span>
           </p>
           <p className="mt-1 break-all text-xs text-text-lo">
             regtest · zero real value{network ? ` · ${network}` : ''} · {address}
           </p>
+        </div>
+      </PageItem>
+
+      <PageItem className="mb-6 rounded-card border border-ink-600 bg-ink-800/60 p-6">
+        <XPBar done={done} total={total} rankName={rank.name} tier={rank.tier} />
+        <div className="mt-5 grid gap-6 sm:grid-cols-[1fr_auto]">
+          <QuestList quests={quests} />
+          <div>
+            <p className="font-micro mb-2 text-[10px] tracking-[0.14em] text-forge-400">MEDALS</p>
+            <MedalShelf quests={quests} />
+          </div>
         </div>
       </PageItem>
 
@@ -97,9 +129,14 @@ export function Portfolio() {
                     <td className="px-5 py-4 text-text-lo">electrs (live)</td>
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-5 py-5 text-center text-xs text-text-lo">
-                      No OP_CAT tokens yet —{' '}
-                      <Link to="/app/mint" className="text-forge-400 hover:underline">mint one →</Link>
+                    <td colSpan={3} className="p-0">
+                      <QuestEmpty
+                        icon="mold"
+                        title="Forge your first token"
+                        quest="No OP_CAT tokens yet — deploy one and it appears here, minted from its own covenant."
+                        to="/app/deploy"
+                        cta="Open the forge"
+                      />
                     </td>
                   </tr>
                 </tbody>
@@ -109,16 +146,21 @@ export function Portfolio() {
 
           <PageItem>
             <h3 className="mb-3 font-display text-text-hi">Recent activity</h3>
-            <div className="rounded-card border border-ink-600 bg-ink-800/60 p-8 text-center">
-              <p className="text-sm text-text-mid">No transactions yet</p>
-              <p className="mt-1 text-xs text-text-lo">Your on-chain history will appear here.</p>
+            <div className="rounded-card border border-ink-600 bg-ink-800/60">
+              <QuestEmpty
+                icon="anvil"
+                title="Your saga starts here"
+                quest="Every signed transaction you broadcast lands here, straight from the chain."
+                to="/app/trade"
+                cta="Make your first move"
+              />
             </div>
           </PageItem>
         </div>
 
         <PageItem className="h-fit space-y-3 rounded-card border border-ink-600 bg-ink-800/60 p-5 lg:sticky lg:top-24">
           <h3 className="font-display text-text-hi">Quick actions</h3>
-          <LinkButton href="#/app/mint" className="w-full">Mint a token</LinkButton>
+          <LinkButton href="#/app/deploy" className="w-full">Deploy a token</LinkButton>
           <LinkButton href="#/app/token" variant="secondary" className="w-full">Explore tokens</LinkButton>
           <LinkButton href="#/app/trade" variant="secondary" className="w-full">Trade</LinkButton>
           {DOCS_URL !== '#' && (

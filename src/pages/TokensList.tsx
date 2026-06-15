@@ -7,6 +7,9 @@ import { PixelIcon } from '../components/ui/PixelIcon'
 import { HonestBanner } from '../components/ui/HonestBanner'
 import { SortHeader } from '../components/ui/SortHeader'
 import { Reveal } from '../components/ui/Reveal'
+import { SlidingToggle } from '../components/juice/SlidingToggle'
+import { MoltenBar } from '../components/juice/MoltenBar'
+import { RankFlair } from '../components/juice/RankFlair'
 import { TOKEN_LIST, type TokenInfo } from '../lib/tokens'
 import { asset } from '../config'
 
@@ -15,10 +18,10 @@ type Dir = 'asc' | 'desc'
 type Filter = 'all' | 'native' | 'opcat'
 
 const mintedPct = (t: TokenInfo) => (t.cap && t.cap > 0 ? ((t.minted ?? 0) / t.cap) * 100 : 0)
+const isOpcat = (t: TokenInfo) => t.type === 'opcat' && !!t.cap
 const holdersText = (t: TokenInfo) => (t.type === 'native' ? '—' : (t.holders ?? 0).toLocaleString())
-const mintedText = (t: TokenInfo) => (t.type === 'native' ? '—' : `${mintedPct(t).toFixed(0)}%`)
+const mintedText = (t: TokenInfo) => (isOpcat(t) ? `${mintedPct(t).toFixed(0)}%` : '—')
 const supplyText = (t: TokenInfo) => (t.cap ? `0 / ${t.cap.toLocaleString()}` : '—')
-const caption = (t: TokenInfo) => (t.type === 'native' ? 'N/A' : 'regtest')
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -45,6 +48,8 @@ export function TokensList() {
     return base
   }, [q, sort, dir, filter])
 
+  const ranked = sort !== 'newest'
+
   const toggleSort = (k: Exclude<SortKey, 'newest'>) => {
     if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else {
@@ -52,6 +57,15 @@ export function TokensList() {
       setDir('desc')
     }
   }
+
+  const MintedCell = ({ t }: { t: TokenInfo }) =>
+    isOpcat(t) ? (
+      <span className="ml-auto block w-28">
+        <MoltenBar pct={mintedPct(t)} tone="forge" label={mintedText(t)} height={5} />
+      </span>
+    ) : (
+      <span className="font-mono text-text-mid">—</span>
+    )
 
   return (
     <>
@@ -62,35 +76,20 @@ export function TokensList() {
       <PageItem>
         <HonestBanner>
           Live holder counts and % minted arrive with the P4 deterministic indexer at mainnet. Today every
-          value is <span className="font-mono text-text-hi">0</span> / <span className="font-mono text-text-hi">—</span> with a regtest label — never faked.
+          value is <span className="font-mono text-text-hi">0</span> or <span className="font-mono text-text-hi">—</span>, never
+          faked. Ranking by these fields is regtest ornament until the indexer lands.
         </HonestBanner>
       </PageItem>
 
       <PageItem className="my-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1.5">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              aria-pressed={filter === f.id}
-              onClick={() => setFilter(f.id)}
-              className={`rounded-pill px-3 py-1.5 text-xs font-medium transition ${
-                filter === f.id
-                  ? 'bg-forge-500/15 text-forge-300 ring-1 ring-forge-500/30'
-                  : 'text-text-mid ring-1 ring-ink-600 hover:text-text-hi'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <SlidingToggle pill options={FILTERS} value={filter} onChange={setFilter} layoutId="pill-token-filter" />
         <label className="relative">
           <span className="sr-only">Search tokens</span>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search…"
-            className="w-44 rounded-btn border border-ink-600 bg-ink-900 px-3 py-2 text-sm text-text-hi placeholder:text-text-lo focus:border-forge-500/50 focus:outline-none"
+            className="input-forge w-44 rounded-btn border border-ink-600 bg-ink-900 px-3 py-2 text-sm text-text-hi placeholder:text-text-lo"
           />
         </label>
       </PageItem>
@@ -116,6 +115,7 @@ export function TokensList() {
             <table className="w-full text-sm">
               <thead className="border-b border-ink-600 bg-ink-800 text-left">
                 <tr>
+                  <th className="w-10 px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-text-lo">#</th>
                   <th className="px-5 py-3 text-xs font-medium uppercase tracking-wide text-text-lo">Token</th>
                   <th className="px-5 py-3 text-xs font-medium uppercase tracking-wide text-text-lo">Type</th>
                   <th className="px-5 py-3 text-right">
@@ -129,12 +129,15 @@ export function TokensList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-600">
-                {rows.map((t) => (
+                {rows.map((t, i) => (
                   <tr
                     key={t.id}
                     onClick={() => navigate(`/app/token/${t.id}`)}
                     className="cursor-pointer transition hover:bg-ink-700/60"
                   >
+                    <td className="px-4 py-4 text-center">
+                      <RankFlair place={ranked && i < 3 ? ((i + 1) as 1 | 2 | 3) : null} />
+                    </td>
                     <td className="px-5 py-4">
                       <span className="flex items-center gap-2.5">
                         {t.sprite ? (
@@ -153,13 +156,9 @@ export function TokensList() {
                       </span>
                     </td>
                     <td className="px-5 py-4 text-text-mid">{t.tag}</td>
+                    <td className="px-5 py-4 text-right font-mono text-text-hi">{holdersText(t)}</td>
                     <td className="px-5 py-4 text-right">
-                      <span className="font-mono text-text-hi">{holdersText(t)}</span>
-                      <span className="block text-[10px] text-text-lo">{caption(t)}</span>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <span className="font-mono text-text-hi">{mintedText(t)}</span>
-                      <span className="block text-[10px] text-text-lo">{caption(t)}</span>
+                      <MintedCell t={t} />
                     </td>
                     <td className="px-5 py-4 text-right font-mono text-text-mid">{supplyText(t)}</td>
                     <td className="px-5 py-4 text-right">
@@ -192,14 +191,20 @@ export function TokensList() {
                     </span>
                     <StatusPill status={t.status} />
                   </div>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-ink-600 pt-3 text-xs">
+                  <dl className="mt-4 grid grid-cols-2 items-end gap-3 border-t border-ink-600 pt-3 text-xs">
                     <div>
                       <dt className="text-text-lo">Holders</dt>
                       <dd className="font-mono text-text-hi">{holdersText(t)}</dd>
                     </div>
                     <div>
                       <dt className="text-text-lo">% Minted</dt>
-                      <dd className="font-mono text-text-hi">{mintedText(t)}</dd>
+                      <dd>
+                        {isOpcat(t) ? (
+                          <MoltenBar pct={mintedPct(t)} tone="forge" label={mintedText(t)} height={5} className="w-full" />
+                        ) : (
+                          <span className="font-mono text-text-hi">—</span>
+                        )}
+                      </dd>
                     </div>
                     <div className="col-span-2">
                       <dt className="text-text-lo">Supply</dt>

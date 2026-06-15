@@ -1,6 +1,7 @@
 import { LinkButton } from '../ui/Button'
 import { SectionHeading } from '../ui/SectionHeading'
 import { Reveal } from '../ui/Reveal'
+import { Disclosure } from '../juice/Disclosure'
 import { DOCS_URL } from '../../config'
 
 const ITEMS = [
@@ -24,10 +25,9 @@ export function Tech() {
       />
       <Reveal className="mt-8 space-y-3">
         {ITEMS.map((it) => (
-          <details key={it.q} className="rounded-card border border-ink-600 bg-ink-800/60 p-5 transition hover:border-forge-500/30">
-            <summary className="cursor-pointer font-display text-text-hi">{it.q}</summary>
-            <p className="mt-3 text-sm leading-relaxed text-text-mid">{it.a}</p>
-          </details>
+          <Disclosure key={it.q} summary={it.q}>
+            {it.a}
+          </Disclosure>
         ))}
         <div className="pt-2 text-center">
           <LinkButton href={DOCS_URL} variant="secondary">

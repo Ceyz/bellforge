@@ -1,19 +1,25 @@
 import { Link, useParams } from 'react-router-dom'
 import { motion, useInView, useReducedMotion } from 'motion/react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { PageHeader } from '../components/app/PageHeader'
 import { CountUp } from '../components/ui/CountUp'
 import { Badge } from '../components/ui/Badge'
 import { Reveal } from '../components/ui/Reveal'
 import { LinkButton } from '../components/ui/Button'
+import { MoltenGauge } from '../components/juice/MoltenGauge'
+import { ForgeButton } from '../components/juice/ForgeButton'
+import { markExplored } from '../lib/forge-progress'
 import { asset, PROOF_URL } from '../config'
 import { getToken, type TokenInfo } from '../lib/tokens'
-
-const pctOf = (n: number, total: number) => (total === 0 ? 0 : (n / total) * 100)
 
 export function Token() {
   const { sym } = useParams<{ sym: string }>()
   const token = getToken(sym)
+
+  // Honest "inspect the anvil" quest: the user really opened a covenant page.
+  useEffect(() => {
+    if (token) markExplored()
+  }, [token])
 
   if (!token) {
     return (
@@ -70,7 +76,7 @@ function Hero({ token }: { token: TokenInfo }) {
             alt={`${token.sym} mark`}
             width={112}
             height={112}
-            className="pixelated h-24 w-24 drop-shadow-[0_0_28px_rgba(255,76,0,0.4)] sm:h-28 sm:w-28"
+            className="pixelated heat-breathe h-24 w-24 sm:h-28 sm:w-28"
             initial={reduce ? false : { opacity: 0, scale: 0.9, y: 8 }}
             animate={reduce ? {} : { opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
@@ -89,8 +95,8 @@ function Hero({ token }: { token: TokenInfo }) {
               <LinkButton href={PROOF_URL} variant="secondary" className="text-xs">
                 View the covenant proof →
               </LinkButton>
-              <Link to="/app/mint" className="text-xs font-medium text-forge-400 transition hover:underline">
-                How minting works
+              <Link to="/app/deploy" className="text-xs font-medium text-forge-400 transition hover:underline">
+                How deploying works
               </Link>
             </div>
           )}
@@ -103,11 +109,12 @@ function Hero({ token }: { token: TokenInfo }) {
 function SupplySection({ token }: { token: TokenInfo }) {
   const cap = token.cap ?? 0
   const minted = token.minted ?? 0
+  const mintable = minted < cap
   return (
     <Reveal className="rounded-card border border-ink-600 bg-ink-800/60 p-6">
       <SectionLabel>Supply</SectionLabel>
       <div className="mt-4 grid items-center gap-6 sm:grid-cols-[auto_1fr]">
-        <SupplyGauge minted={minted} cap={cap} />
+        <MoltenGauge minted={minted} cap={cap} />
         <div className="space-y-3">
           <div>
             <p className="text-xs text-text-lo">Minted so far</p>
@@ -116,15 +123,23 @@ function SupplySection({ token }: { token: TokenInfo }) {
             </p>
           </div>
           <p className="text-sm leading-relaxed text-text-mid">
-            Zero {token.sym} exist today. On regtest the gauge reads{' '}
+            Zero {token.sym} exist today. The mold is lit and empty — the gauge reads{' '}
             <span className="font-mono text-text-hi">0%</span> by design. The cap is{' '}
             <span className="text-text-hi">fixed the instant genesis fires</span> and can never move.
           </p>
+          {mintable && (
+            <div className="pt-1">
+              <ForgeButton idleLabel={`Forge ${token.sym} — preview`} doneLabel={`${token.sym} struck (preview)`} />
+              <p className="mt-2 text-xs text-text-lo">
+                Cosmetic preview of the fair mint. Real minting opens at mainnet, after the genesis freeze + audit.
+              </p>
+            </div>
+          )}
         </div>
       </div>
       <dl className="mt-6 grid gap-px overflow-hidden rounded-well border border-ink-600 bg-ink-600 sm:grid-cols-2">
         {token.facts.map((f) => (
-          <div key={f.k} className="bg-ink-800 p-4">
+          <div key={f.k} className="heat-card bg-ink-800 p-4">
             <dt className="text-xs text-text-lo">{f.k}</dt>
             <dd className="mt-0.5 font-mono text-lg text-text-hi">{f.v}</dd>
             <dd className="mt-0.5 text-xs text-text-mid">{f.note}</dd>
@@ -132,35 +147,6 @@ function SupplySection({ token }: { token: TokenInfo }) {
         ))}
       </dl>
     </Reveal>
-  )
-}
-
-function SupplyGauge({ minted, cap }: { minted: number; cap: number }) {
-  const reduce = useReducedMotion()
-  const ref = useRef<SVGSVGElement>(null)
-  const inView = useInView(ref, { once: true, margin: '-60px' })
-  const R = 52
-  const C = 2 * Math.PI * R
-  const frac = cap === 0 ? 0 : minted / cap
-  const sweep = 0.75
-  const filled = Math.max(frac, 0) * sweep
-  return (
-    <div className="relative h-40 w-40 shrink-0">
-      <svg ref={ref} viewBox="0 0 140 140" className="h-40 w-40 -rotate-[225deg]">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--color-ink-600)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${C * sweep} ${C}`} />
-        <motion.circle
-          cx="70" cy="70" r={R} fill="none" stroke="var(--color-forge-500)" strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={`${C * filled} ${C}`}
-          initial={reduce ? false : { strokeDasharray: `0 ${C}` }}
-          animate={inView ? { strokeDasharray: `${C * filled} ${C}` } : {}}
-          transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-2xl text-text-hi"><CountUp to={pctOf(minted, cap)} suffix="%" /></span>
-        <span className="font-micro text-[10px] tracking-wide text-text-lo">MINTED</span>
-      </div>
-    </div>
   )
 }
 
@@ -193,18 +179,29 @@ function Donut({ pct }: { pct: number }) {
   const inView = useInView(ref, { once: true, margin: '-60px' })
   const R = 48
   const C = 2 * Math.PI * R
-  const offset = C * (1 - pct / 100)
+  const frac = Math.max(0, Math.min(1, pct / 100))
+  const offset = C * (1 - frac)
+  const a = frac * 2 * Math.PI
+  const tx = 70 + R * Math.cos(a)
+  const ty = 70 + R * Math.sin(a)
   return (
     <div className="relative h-36 w-36 shrink-0">
       <svg ref={ref} viewBox="0 0 140 140" className="h-36 w-36 -rotate-90">
         <circle cx="70" cy="70" r={R} fill="none" stroke="var(--color-ink-600)" strokeWidth="14" />
         <motion.circle
-          cx="70" cy="70" r={R} fill="none" stroke="var(--color-forge-500)" strokeWidth="14"
+          cx="70" cy="70" r={R} fill="none" stroke="url(#molten-fill)" strokeWidth="14"
           strokeDasharray={`${C} ${C}`}
           initial={reduce ? false : { strokeDashoffset: C }}
           animate={inView ? { strokeDashoffset: offset } : {}}
           transition={{ duration: 1.3, ease: [0.22, 1, 0.36, 1] }}
         />
+        {!reduce && frac > 0 && (
+          <motion.circle
+            r="5.5" fill="var(--color-bell-300)" cx={tx} cy={ty}
+            initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}} transition={{ delay: 1.1, duration: 0.3 }}
+            style={{ filter: 'drop-shadow(0 0 7px rgba(255,210,74,0.9))' }}
+          />
+        )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-mono text-2xl text-text-hi"><CountUp to={pct} suffix="%" /></span>
@@ -224,7 +221,7 @@ function GuaranteesSection({ token }: { token: TokenInfo }) {
       </p>
       <div className="mt-5 grid gap-px overflow-hidden rounded-well border border-ink-600 bg-ink-600 sm:grid-cols-2">
         {token.guarantees.map((g) => (
-          <div key={g.title} className="bg-ink-800 p-5">
+          <div key={g.title} className="heat-card bg-ink-800 p-5">
             <h3 className="font-display text-sm text-text-hi">{g.title}</h3>
             <p className="mt-1.5 text-sm leading-relaxed text-text-mid">{g.body}</p>
           </div>
@@ -240,7 +237,7 @@ function AboutSection({ token }: { token: TokenInfo }) {
       <SectionLabel>About</SectionLabel>
       <dl className="mt-4 grid gap-px overflow-hidden rounded-well border border-ink-600 bg-ink-600 sm:grid-cols-2">
         {token.facts.map((f) => (
-          <div key={f.k} className="bg-ink-800 p-4">
+          <div key={f.k} className="heat-card bg-ink-800 p-4">
             <dt className="text-xs text-text-lo">{f.k}</dt>
             <dd className="mt-0.5 font-mono text-lg text-text-hi">{f.v}</dd>
             <dd className="mt-0.5 text-xs text-text-mid">{f.note}</dd>
