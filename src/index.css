@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* Bellforge frozen design tokens — canonical (DESIGN_PLAN.md §3.1).
+   Obsidian + ember + gold, deliberately restricted; gold ~10–15% accent only. */
+@theme {
+  /* Obsidian — ink-* */
+  --color-ink-950: #000000;
+  --color-ink-900: #0a0a0d;
+  --color-ink-850: #0d0f15;
+  --color-ink-800: #13161d;
+  --color-ink-700: #1a1e26;
+  --color-ink-600: #23272f;
+
+  /* Ember — forge-* (the #FF4C00 family) */
+  --color-forge-50: #fff5e9;
+  --color-forge-300: #ffcf8a;
+  --color-forge-400: #ff7a1a;
+  --color-forge-500: #ff4c00;
+  --color-forge-600: #e85d04;
+  --color-forge-700: #b22000;
+
+  /* Gold — bell-* (held to ~10–15% of the layout) */
+  --color-bell-300: #ffd24a;
+  --color-bell-400: #e0a810;
+  --color-bell-600: #8a6410;
+
+  /* Text */
+  --color-text-hi: #e7e9ee;
+  --color-text-mid: #a1a7b3;
+  --color-text-lo: #6b7280;
+
+  /* Type roles */
+  --font-display: "Pixelify Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-micro: "Silkscreen", "Pixelify Sans", monospace;
+
+  /* Radius */
+  --radius-card: 1rem;
+  --radius-btn: 0.75rem;
+  --radius-pill: 9999px;
+  --radius-well: 1.5rem;
+}
+
+:root {
+  color-scheme: dark;
+  /* heat signals — used sparingly (primary CTA, active forge accents) */
+  --glow-ember: 0 0 24px -4px rgba(255, 76, 0, 0.35);
+  --ring-gold: inset 0 0 0 1px rgba(224, 168, 16, 0.5);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 520px at 50% -8%, #20140a 0%, transparent 58%),
+    var(--color-ink-900);
+  color: var(--color-text-hi);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Crisp pixel-art rasters — MDN fallback stack (apply to every sprite <img>). */
+.pixelated {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+/* Decorative motion is gated; functional feedback stays (DESIGN_PLAN §5.5). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
