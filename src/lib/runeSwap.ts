@@ -13,6 +13,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 import { ELECTRS } from '../config'
 import type { Offer } from './offers'
+import { resolveRune, formatRuneAmount, cleanSymbol, type RuneBalancesResult, type RuneBalance } from './runes'
 
 const API = ELECTRS.mainnet
 const DUST = 546
@@ -427,5 +428,49 @@ export async function validateAndPostOffer(signed: string, draft: OfferDraft, re
     return { id: b.id }
   } catch (e: any) {
     return { error: String(e?.message || e) }
+  }
+}
+
+/** An address's EXACT rune balances via bounded lineage replay. Unlike the Portfolio's
+    simple per-tx decode (runes.ts `fetchRuneBalances`), this resolves runes received via a
+    transfer/swap EDICT — those carry no mint in their creating tx, so the simple decoder
+    (which only seeds from mints) attributes 0 to them. Bounded: big wallets hit the tracer's
+    fetch cap → partial → `capped` (UI shows "≥"). Reuses the same makeTracer as the swap. */
+export async function traceRuneBalances(address: string): Promise<RuneBalancesResult> {
+  try {
+    const lib = await getLib()
+    const trace = await makeTracer(lib)
+    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(address)}/utxo`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('utxo fetch'))))
+    if (!Array.isArray(utxos)) return { error: true }
+    if (utxos.length === 0) return { rows: [], capped: false }
+    const MAXU = 150
+    let capped = utxos.length > MAXU || utxos.length >= 1000
+    const held = new Map<string, bigint>()
+    for (const u of utxos.slice(0, MAXU)) {
+      const c = await trace(u.txid, u.vout)
+      if (c === null) {
+        capped = true // unresolved (cap hit / too deep) → treat the total as a lower bound
+        continue
+      }
+      for (const [id, a] of c) held.set(id, (held.get(id) ?? 0n) + a)
+    }
+    const rows: RuneBalance[] = []
+    for (const [id, amount] of held) {
+      if (amount <= 0n) continue
+      const meta = await resolveRune(id)
+      rows.push({
+        id,
+        name: meta.display,
+        symbol: cleanSymbol(meta.symbol),
+        divisibility: meta.divisibility,
+        amount,
+        display: formatRuneAmount(amount, meta.divisibility, meta.symbol),
+        approx: capped || undefined,
+      })
+    }
+    rows.sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
+    return { rows, capped }
+  } catch {
+    return { error: true }
   }
 }

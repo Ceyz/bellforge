@@ -4,7 +4,7 @@ import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
-import { fetchOffers, type Offer } from '../lib/offers'
+import { fetchOffers, cancelOffer, type Offer } from '../lib/offers'
 import { buildTake, finalizeAndBroadcast, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
@@ -291,6 +291,14 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   const [budget, setBudget] = useState('')
   const [sweepRun, setSweepRun] = useState<SweepRun | null>(null)
   const sweepCancelled = useRef(false)
+  const [cancelling, setCancelling] = useState<string | null>(null)
+
+  async function onCancelOffer(id: string) {
+    setCancelling(id)
+    const ok = await cancelOffer(id)
+    setCancelling(null)
+    if (ok) setOffers((os) => os.filter((o) => o.id !== id))
+  }
 
   useEffect(() => {
     let alive = true
@@ -466,10 +474,9 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* LEFT — chart + live sell orders for this rune (cheapest first) */}
+        {/* LEFT — live sell orders for this rune (cheapest first). No price chart: runes
+            trade P2P and we have no honest price feed (no fake "illustrative" market here). */}
         <div className="space-y-6">
-          <Chart sym={rune.sym} />
-
           <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
             <div className="mb-1 flex items-center justify-between">
               <h3 className="font-display text-text-hi">Sell orders · {rune.sym}</h3>
@@ -516,14 +523,29 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                                   </td>
                                   <td className="px-4 py-3 text-text-lo">{ago(o.created_at)}</td>
                                   <td className="px-4 py-3 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => startTake(o)}
-                                      title={address ? 'Buy this offer — your wallet signs only your $BELLS funding input.' : 'Connect your wallet to take an offer.'}
-                                      className="rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:brightness-110"
-                                    >
-                                      Take
-                                    </button>
+                                    {address && o.seller_addr === address ? (
+                                      <span className="inline-flex items-center gap-2">
+                                        <span className="font-micro text-[9px] uppercase tracking-wide text-text-lo">Your offer</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => onCancelOffer(o.id)}
+                                          disabled={cancelling === o.id}
+                                          title="Delist your offer (nothing was broadcast; the rune never moved)."
+                                          className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-red-400/60 hover:text-red-300 disabled:opacity-50"
+                                        >
+                                          {cancelling === o.id ? 'Cancelling…' : 'Cancel'}
+                                        </button>
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => startTake(o)}
+                                        title={address ? 'Buy this offer — your wallet signs only your $BELLS funding input.' : 'Connect your wallet to take an offer.'}
+                                        className="rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:brightness-110"
+                                      >
+                                        Take
+                                      </button>
+                                    )}
                                   </td>
                                 </tr>
                               )

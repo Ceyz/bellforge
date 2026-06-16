@@ -311,7 +311,7 @@ const min = (a: bigint, b: bigint) => (a < b ? a : b)
 function brokenSurrogate(s: string): boolean {
   return s.length === 1 && s.charCodeAt(0) >= 0xd800 && s.charCodeAt(0) <= 0xdfff
 }
-function cleanSymbol(s: string): string | undefined {
+export function cleanSymbol(s: string): string | undefined {
   if (!s || brokenSurrogate(s)) return undefined
   return s
 }

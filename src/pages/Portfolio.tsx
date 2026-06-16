@@ -10,8 +10,12 @@ import { EmberDot } from '../components/ui/EmberDot'
 import { OdometerNumber } from '../components/juice/OdometerNumber'
 import { ForgeEmpty } from '../components/juice/ForgeEmpty'
 import { HonestBanner } from '../components/ui/HonestBanner'
-import { fetchRuneBalances, type RuneBalance } from '../lib/runes'
-import { asset, DOCS_URL, explorerAddress, explorerTx } from '../config'
+import { type RuneBalance } from '../lib/runes'
+import { traceRuneBalances } from '../lib/runeSwap'
+import { fetchMyOffers, cancelOffer, type Offer } from '../lib/offers'
+import { asset, DOCS_URL, EXPLORER, explorerAddress, explorerTx } from '../config'
+
+const RUNE_NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOOK•IN•BELLS' }
 
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null; txCount: number }
 
@@ -31,30 +35,46 @@ export function Portfolio() {
   const [bal, setBal] = useState<Bal>({ state: 'idle', bells: null, txCount: 0 })
   const [activity, setActivity] = useState<Activity[]>([])
   const [runes, setRunes] = useState<{ state: 'idle' | 'loading' | 'error'; rows: RuneBalance[]; capped: boolean }>({ state: 'idle', rows: [], capped: false })
+  const [myOffers, setMyOffers] = useState<{ state: 'idle' | 'loading'; rows: Offer[] }>({ state: 'idle', rows: [] })
+  const [cancelling, setCancelling] = useState<string | null>(null)
 
   useEffect(() => {
     if (!address) {
       setBal({ state: 'idle', bells: null, txCount: 0 })
       setActivity([])
       setRunes({ state: 'idle', rows: [], capped: false })
+      setMyOffers({ state: 'idle', rows: [] })
       return
     }
     let alive = true
     setBal({ state: 'loading', bells: null, txCount: 0 })
     setRunes({ state: 'loading', rows: [], capped: false })
+    setMyOffers({ state: 'loading', rows: [] })
     fetchBellsBalance(address).then((r) => {
       if (alive) setBal('error' in r ? { state: 'error', bells: null, txCount: 0 } : { state: 'idle', bells: r.bells, txCount: r.txCount })
     })
     fetchActivity(address).then((r) => {
       if (alive && !('error' in r)) setActivity(r)
     })
-    fetchRuneBalances(address).then((r) => {
+    // EXACT balances via lineage replay — resolves runes received through a swap/transfer
+    // edict, which the simple per-tx decoder (runes.ts) attributes 0 to.
+    traceRuneBalances(address).then((r) => {
       if (alive) setRunes('error' in r ? { state: 'error', rows: [], capped: false } : { state: 'idle', rows: r.rows, capped: r.capped })
+    })
+    fetchMyOffers(address).then((r) => {
+      if (alive) setMyOffers({ state: 'idle', rows: 'offers' in r ? r.offers : [] })
     })
     return () => {
       alive = false
     }
   }, [address])
+
+  async function onCancel(id: string) {
+    setCancelling(id)
+    const ok = await cancelOffer(id)
+    setCancelling(null)
+    if (ok) setMyOffers((m) => ({ ...m, rows: m.rows.filter((o) => o.id !== id) }))
+  }
 
   if (!address) {
     return (
@@ -211,6 +231,59 @@ export function Portfolio() {
                   </HonestBanner>
                 </div>
               </>
+            )}
+          </PageItem>
+
+          <PageItem>
+            <div className="mb-3 flex items-baseline justify-between">
+              <h3 className="font-display text-text-hi">My rune offers</h3>
+              {myOffers.rows.length > 0 && <span className="text-xs text-text-lo">{myOffers.rows.length} live</span>}
+            </div>
+            {myOffers.state === 'loading' ? (
+              <div className="rounded-card border border-ink-600 bg-ink-800/60 p-6 text-center text-sm text-text-mid">Loading your offers…</div>
+            ) : myOffers.rows.length === 0 ? (
+              <div className="rounded-card border border-ink-600 bg-ink-800/60">
+                <ForgeEmpty icon="anvil" title="No live offers" body="Offers you sign in Trade → Sell a rune show here. Signing never broadcasts — cancel anytime." to="/app/trade" cta="Sell a rune" />
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-card border border-ink-600">
+                <table className="w-full text-sm">
+                  <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
+                    <tr>
+                      <th className="px-5 py-3 font-medium">Rune</th>
+                      <th className="px-5 py-3 font-medium">Price</th>
+                      <th className="px-5 py-3 font-medium">Rune UTXO</th>
+                      <th className="px-5 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-600">
+                    {myOffers.rows.map((o) => (
+                      <tr key={o.id}>
+                        <td className="px-5 py-4">
+                          <span className="font-mono text-text-hi">{RUNE_NAMES[o.rune_id] ?? o.rune_id}</span>
+                          {o.amount_hint && <span className="block text-[10px] text-text-lo">~{o.amount_hint} units</span>}
+                        </td>
+                        <td className="px-5 py-4 font-mono text-text-mid">{o.price.toLocaleString()} sats</td>
+                        <td className="px-5 py-4">
+                          <a href={`${EXPLORER}/tx/${o.rune_utxo.split(':')[0]}`} target="_blank" rel="noopener noreferrer" className="font-mono text-text-lo transition hover:text-forge-400">
+                            {o.rune_utxo.slice(0, 10)}…:{o.rune_utxo.split(':')[1]}
+                          </a>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => onCancel(o.id)}
+                            disabled={cancelling === o.id}
+                            className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-red-400/60 hover:text-red-300 disabled:opacity-50"
+                          >
+                            {cancelling === o.id ? 'Cancelling…' : 'Cancel'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </PageItem>
 

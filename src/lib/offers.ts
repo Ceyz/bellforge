@@ -27,3 +27,21 @@ export async function fetchOffers(rune?: string): Promise<OffersResult> {
     return { error: true }
   }
 }
+
+/** The open offers posted by one address (client-side filter on the public board). */
+export async function fetchMyOffers(address: string): Promise<OffersResult> {
+  const r = await fetchOffers()
+  if ('offers' in r) return { offers: r.offers.filter((o) => o.seller_addr === address) }
+  return r
+}
+
+/** Delist an offer (the seller cancels). Returns ok/false — never throws. */
+export async function cancelOffer(id: string): Promise<boolean> {
+  if (!RELAY) return false
+  try {
+    const res = await fetch(`${RELAY}/offers/${id}/cancel`, { method: 'POST' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
