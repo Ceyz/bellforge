@@ -51,7 +51,54 @@ function getLib(): Promise<Lib> {
 
 const ov = (x: any): any => (x == null ? null : typeof x.value === 'function' ? x.value() : '_value' in x ? x._value : x)
 
-type Stone = { mint: string | null; pointer: number | null; edicts: { id: string; amount: bigint; output: number }[] }
+type Edict = { id: string; amount: bigint; output: number }
+
+/** Re-derive edicts from the runestone integers. runelib mis-decodes a runestone with >=2
+    edicts (the deltas), so the lineage tracer can mis-credit on a multi-edict tx — port the
+    same fix runes.ts uses. Casey body format: after the 0 separator, 4 ints per edict
+    (block-delta, tag/idx-field, amount, output) with running (block,idx). */
+function reparseEdicts(rawTxHex: string, lib: Lib): Edict[] {
+  try {
+    const tx = lib.b.Transaction.fromHex(rawTxHex)
+    const payloadOpt = lib.Runestone.payload(tx)
+    if (!payloadOpt?.isSome?.()) return []
+    const intsOpt = lib.Runestone.integers(payloadOpt.value())
+    const ints: bigint[] = intsOpt?.value?.() ?? []
+    let i = 0
+    let inBody = false
+    const body: bigint[] = []
+    while (i < ints.length) {
+      if (!inBody) {
+        if (ints[i] === 0n) {
+          inBody = true
+          i += 1
+          continue
+        }
+        i += 2
+      } else {
+        body.push(ints[i])
+        i += 1
+      }
+    }
+    const edicts: Edict[] = []
+    let block = 0n
+    let idx = 0n
+    for (let j = 0; j + 4 <= body.length; j += 4) {
+      const [bDelta, tField, amount, output] = body.slice(j, j + 4)
+      if (bDelta === 0n) idx += tField
+      else {
+        block += bDelta
+        idx = tField
+      }
+      edicts.push({ id: `${block}:${idx}`, amount, output: Number(output) })
+    }
+    return edicts
+  } catch {
+    return []
+  }
+}
+
+type Stone = { mint: string | null; pointer: number | null; edicts: Edict[] }
 function decodeStone(hex: string, lib: Lib): Stone | null {
   let opt: any
   try {
@@ -62,12 +109,8 @@ function decodeStone(hex: string, lib: Lib): Stone | null {
   if (!opt?.isSome?.()) return null
   const s = opt.value()
   const mint = ov(s.mint)
-  const edicts: Stone['edicts'] = []
-  for (const e of s.edicts || []) {
-    const ev = e._value || e
-    const id = ov(ev.id) || ev.id
-    if (id && id.block != null) edicts.push({ id: `${id.block}:${id.idx}`, amount: BigInt(ev.amount), output: Number(ev.output) })
-  }
+  // edicts via reparseEdicts (runelib mis-decodes >=2); mint/pointer from decipher are fine.
+  const edicts = reparseEdicts(hex, lib)
   const ptr = ov(s.pointer)
   return { mint: mint && mint.block != null ? `${mint.block}:${mint.idx}` : null, pointer: typeof ptr === 'number' ? ptr : null, edicts }
 }
@@ -150,14 +193,54 @@ export type TakePlan = {
 
 const NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOOK•IN•BELLS' }
 
+// Bellscoin Runes are MAINNET-only (no testnet runes); a tb-prefixed address would otherwise
+// be served wrong (mainnet) electrs data, so reject it explicitly instead.
+const MAINNET_ONLY = 'Bellscoin Runes are mainnet-only — connect a bel1… mainnet address.'
+const isTestnetAddr = (a: string) => /^tb/i.test(a || '')
+
+/** Pre-sign binding check (defense-in-depth + refuse-before-sign UX). The seller's 0x83 sig
+    already commits input0's outpoint (ANYONECANPAY) + output0's value/script (SINGLE), so a
+    relay/MITM that tampers either yields an invalid sig → node-reject → no loss. We verify it
+    here so the wallet is never asked to sign a take that can't possibly settle: the offer PSBT
+    is a bare input0→output0, signed 0x83, whose input == the advertised rune_utxo and whose
+    output0 pays the advertised seller address. Returns null = OK, or an error string. */
+function checkOfferBinding(psbt: any, offer: Offer, lib: Lib): string | null {
+  if (psbt.txInputs.length !== 1 || psbt.txOutputs.length !== 1) return 'Offer is not a bare SINGLE|ACP listing.'
+  const inp = psbt.data.inputs[0]
+  if (!inp?.witnessUtxo) return 'Offer input is missing its witnessUtxo.'
+  // sighash from the SIGNATURE byte (authoritative — wallets may drop the PSBT sighashType
+  // field). P2WPKH seller → partialSig; taproot seller → tapKeySig (65B ending 0x83).
+  let sh: number | null = null
+  if (inp.partialSig?.length) {
+    const s = inp.partialSig[0].signature
+    sh = s[s.length - 1]
+  } else if (inp.tapKeySig) {
+    sh = inp.tapKeySig.length === 65 ? inp.tapKeySig[64] : (inp.sighashType ?? 0x00)
+  }
+  if (sh !== 0x83) return 'Offer is not signed SIGHASH_SINGLE|ANYONECANPAY (0x83).'
+  const outpoint = `${Buffer.from(psbt.txInputs[0].hash).reverse().toString('hex')}:${psbt.txInputs[0].index}`
+  if (offer.rune_utxo && outpoint !== offer.rune_utxo) return 'Offer PSBT input does not match the advertised rune UTXO.'
+  let payScript: Uint8Array
+  try {
+    payScript = lib.b.address.toOutputScript(offer.seller_addr, BELLS)
+  } catch {
+    return 'Offer seller address is invalid.'
+  }
+  if (Buffer.compare(Buffer.from(psbt.txOutputs[0].script), Buffer.from(payScript)) !== 0) return 'Offer payment output does not match the seller address.'
+  return null
+}
+
 /** Build the buyer's completion of an offer. Never throws — returns { error }.
     Does NOT sign or broadcast. The caller has the wallet sign buyerInputIndex
     (plain BELLS, SIGHASH_ALL), then calls finalizeAndBroadcast. */
 export async function buildTake(offer: Offer, buyerAddress: string): Promise<TakePlan | { error: string }> {
   try {
+    if (isTestnetAddr(buyerAddress)) return { error: MAINNET_ONLY }
     const lib = await getLib()
     const trace = await makeTracer(lib)
     const psbt = lib.b.Psbt.fromBase64(offer.psbt, { network: BELLS })
+    const bindErr = checkOfferBinding(psbt, offer, lib) // refuse a tampered/mismatched offer before signing
+    if (bindErr) return { error: bindErr }
     const runeTxid = Buffer.from(psbt.txInputs[0].hash).reverse().toString('hex')
     const runeVout = psbt.txInputs[0].index
     const price = psbt.txOutputs[0].value
@@ -329,6 +412,7 @@ export type BatchTakePlan = {
 export async function buildBatchTake(offers: Offer[], buyerAddress: string): Promise<BatchTakePlan | { error: string }> {
   try {
     if (offers.length === 0) return { error: 'No offers selected.' }
+    if (isTestnetAddr(buyerAddress)) return { error: MAINNET_ONLY }
     const lib = await getLib()
     const trace = await makeTracer(lib)
 
@@ -347,7 +431,8 @@ export async function buildBatchTake(offers: Offer[], buyerAddress: string): Pro
     const sellers: { txid: string; vout: number }[] = []
     for (const offer of offers) {
       const p = lib.b.Psbt.fromBase64(offer.psbt, { network: BELLS })
-      if (p.txInputs.length !== 1 || p.txOutputs.length !== 1) return { error: 'A selected offer is not a bare SINGLE|ACP listing.' }
+      const bindErr = checkOfferBinding(p, offer, lib) // outpoint==advertised, output0==seller, 0x83, witnessUtxo
+      if (bindErr) return { error: `Offer ${offer.id?.slice(0, 8) ?? ''}: ${bindErr}` }
       const txid = Buffer.from(p.txInputs[0].hash).reverse().toString('hex')
       const vout = p.txInputs[0].index
       const content = await trace(txid, vout)
@@ -491,6 +576,7 @@ export type SellerRuneUtxo = { txid: string; vout: number; value: number; runeId
 /** Scan the connected address for single-rune UTXOs the seller could offer (bounded). */
 export async function listRuneUtxos(address: string): Promise<SellerRuneUtxo[] | { error: string }> {
   try {
+    if (isTestnetAddr(address)) return { error: MAINNET_ONLY }
     const lib = await getLib()
     const trace = await makeTracer(lib)
     const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(address)}/utxo`).then((r) => r.json())
@@ -526,6 +612,7 @@ export type OfferDraft = {
     Never signs or broadcasts. The caller has the wallet sign input0 with sighash 0x83. */
 export async function buildOffer(utxo: SellerRuneUtxo, price: number, sellerAddr: string): Promise<OfferDraft | { error: string }> {
   try {
+    if (isTestnetAddr(sellerAddr)) return { error: MAINNET_ONLY }
     if (!Number.isInteger(price) || price < DUST) return { error: `Price must be a whole number of sats ≥ ${DUST}.` }
     const lib = await getLib()
     const trace = await makeTracer(lib)
@@ -617,6 +704,7 @@ export async function validateAndPostOffer(signed: string, draft: OfferDraft, re
     fetch cap → partial → `capped` (UI shows "≥"). Reuses the same makeTracer as the swap. */
 export async function traceRuneBalances(address: string): Promise<RuneBalancesResult> {
   try {
+    if (isTestnetAddr(address)) return { rows: [], capped: false }
     const lib = await getLib()
     const trace = await makeTracer(lib)
     const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(address)}/utxo`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('utxo fetch'))))

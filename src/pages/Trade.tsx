@@ -378,7 +378,8 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
       if (!signedStr) return { error: 'Wallet returned no signed PSBT.' }
       const res = await finalizeAndBroadcast(signedStr, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
       if ('error' in res) return res
-      if (RELAY) fetch(`${RELAY}/offers/${offer.id}/taken`, { method: 'POST' }).catch(() => {})
+      // proof-of-spend mark (the relay verifies the rune UTXO is spent by this txid)
+      if (RELAY) fetch(`${RELAY}/offers/${offer.id}/taken`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ txid: res.txid }) }).catch(() => {})
       return { txid: res.txid }
     } catch (e) {
       return { error: walletErr(e) }
@@ -442,7 +443,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
         setSweepState({ ...sweepState, phase: 'error', msg: res.error })
         return
       }
-      if (RELAY) sweepState.offers?.forEach((o) => fetch(`${RELAY}/offers/${o.id}/taken`, { method: 'POST' }).catch(() => {}))
+      if (RELAY) sweepState.offers?.forEach((o) => fetch(`${RELAY}/offers/${o.id}/taken`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ txid: res.txid }) }).catch(() => {}))
       const ids = new Set(sweepState.offers?.map((o) => o.id))
       setOffers((os) => os.filter((o) => !ids.has(o.id)))
       setSweepState({ ...sweepState, phase: 'done', txid: res.txid })
