@@ -4,7 +4,7 @@ import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
-import { fetchOffers, cancelOffer, type Offer } from '../lib/offers'
+import { fetchOffers, cancelOffer, filterLiveOffers, type Offer } from '../lib/offers'
 import { buildTake, finalizeAndBroadcast, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
@@ -308,8 +308,12 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
       if ('unconfigured' in r) setState('unconfigured')
       else if ('error' in r) setState('error')
       else {
-        setOffers(r.offers)
+        setOffers(r.offers) // show immediately…
         setState('ok')
+        // …then drop any whose rune UTXO is already spent (cosmetic; cron does the durable prune)
+        filterLiveOffers(r.offers).then((live) => {
+          if (alive && live.length !== r.offers.length) setOffers(live)
+        })
       }
     })
     return () => {

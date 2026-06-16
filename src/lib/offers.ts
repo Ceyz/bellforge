@@ -1,4 +1,6 @@
-import { RELAY } from '../config'
+import { RELAY, ELECTRS } from '../config'
+
+const API = ELECTRS.mainnet
 
 /** A rune-swap offer from the relay (a partial SINGLE|ACP PSBT + metadata). The
     relay is a dumb board — a taker must re-trace the rune UTXO + re-validate the
@@ -49,6 +51,27 @@ export async function fetchMyOffers(address: string): Promise<OffersResult> {
   const r = await fetchOffers()
   if ('offers' in r) return { offers: r.offers.filter((o) => o.seller_addr === address) }
   return r
+}
+
+/** Drop offers whose rune UTXO is already spent on-chain (immediate board cleanliness,
+    independent of the relay's prune cron). On any electrs blip we KEEP the offer — the
+    take/sweep re-traces + the broadcast would fail anyway, so this is only cosmetic. */
+export async function filterLiveOffers(offers: Offer[]): Promise<Offer[]> {
+  const checked = await Promise.all(
+    offers.map(async (o) => {
+      const [txid, vout] = o.rune_utxo.split(':')
+      if (!txid || vout == null) return o
+      try {
+        const r = await fetch(`${API}/tx/${txid}/outspend/${vout}`)
+        if (!r.ok) return o
+        const j = (await r.json()) as { spent?: boolean }
+        return j?.spent ? null : o
+      } catch {
+        return o
+      }
+    }),
+  )
+  return checked.filter((o): o is Offer => o !== null)
 }
 
 /** Delist an offer (the seller cancels). Returns ok/false — never throws. */
