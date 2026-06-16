@@ -132,7 +132,7 @@ async function makeTracer(lib: Lib) {
 }
 
 export type TakePlan = {
-  psbtHex: string
+  psbtB64: string // base64 PSBT — the format Nintondo signPsbt expects (hex → "Invalid Magic Number")
   buyerInputIndex: number
   runeTxid: string
   runeVout: number
@@ -233,7 +233,7 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
     if (g.out.get(0)?.get(id)) return { error: 'Guard: the seller would get the rune back. Refusing.' }
 
     return {
-      psbtHex: psbt.toHex(),
+      psbtB64: psbt.toBase64(),
       buyerInputIndex: 1,
       runeTxid,
       runeVout,

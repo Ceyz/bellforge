@@ -263,10 +263,14 @@ function RuneOffers() {
       // P2WPKH funding → SIGHASH_ALL (1). Taproot keyspend → SIGHASH_DEFAULT (omit the
       // whitelist so the wallet uses 0x00; DEFAULT still commits to every output).
       const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
-      const signed = await nin.signPsbt(p.psbtHex, { autoFinalized: false, toSignInputs: [toSign] })
-      const signedHex = typeof signed === 'string' ? signed : ((signed as Record<string, string>)?.psbtHex ?? (signed as Record<string, string>)?.hex ?? '')
-      if (!signedHex) throw new Error('Wallet returned no signed PSBT.')
-      const res = await finalizeAndBroadcast(signedHex, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
+      // Nintondo signPsbt expects a BASE64 psbt (hex → "Invalid Magic Number").
+      const signed = await nin.signPsbt(p.psbtB64, { autoFinalized: false, toSignInputs: [toSign] })
+      // The wallet may return a bare string (base64/hex PSBT or raw tx) or an object;
+      // finalizeAndBroadcast's toFinalTxHex normalizes all of those.
+      const s = signed as Record<string, string>
+      const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
+      if (!signedStr) throw new Error('Wallet returned no signed PSBT.')
+      const res = await finalizeAndBroadcast(signedStr, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
       if ('error' in res) {
         setTake({ ...take, phase: 'error', msg: res.error })
         return
