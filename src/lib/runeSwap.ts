@@ -11,13 +11,14 @@
 // bitcoinjs-lib + runelib are dynamically imported (kept out of the main bundle).
 // Buffer is polyfilled in main.tsx.
 // ──────────────────────────────────────────────────────────────────────────
+/* eslint-disable @typescript-eslint/no-explicit-any -- bitcoinjs-lib + runelib are untyped
+   CJS, loaded via dynamic import(); `any` is the deliberate interop boundary (the Lib type). */
 import { ELECTRS } from '../config'
 import type { Offer } from './offers'
 import { resolveRune, formatRuneAmount, cleanSymbol, type RuneBalancesResult, type RuneBalance } from './runes'
 
 const API = ELECTRS.mainnet
 const DUST = 546
-const PERMINT: Record<string, bigint> = { '1:0': 1n }
 // Bellscoin mainnet params for bitcoinjs-lib (bech32 'bel', wif 0x99).
 const BELLS = {
   messagePrefix: '\x18Bells Signed Message:\n',
@@ -28,7 +29,7 @@ const BELLS = {
   wif: 0x99,
 }
 
-type Lib = { b: any; Runestone: any; Edict: any; RuneId: any; none: any }
+type Lib = { b: any; Runestone: any; Edict: any; RuneId: any; none: any; Message: any }
 let _lib: Promise<Lib> | null = null
 function getLib(): Promise<Lib> {
   if (_lib) return _lib
@@ -44,10 +45,12 @@ function getLib(): Promise<Lib> {
     const ecc = eccmod.isXOnlyPoint ? eccmod : (eccmod.default ?? eccmod)
     b.initEccLib(ecc)
     const r = rmod.default ?? rmod
-    return { b, Runestone: r.Runestone ?? rmod.Runestone, Edict: r.Edict ?? rmod.Edict, RuneId: r.RuneId ?? rmod.RuneId, none: r.none ?? rmod.none }
+    return { b, Runestone: r.Runestone ?? rmod.Runestone, Edict: r.Edict ?? rmod.Edict, RuneId: r.RuneId ?? rmod.RuneId, none: r.none ?? rmod.none, Message: r.Message ?? rmod.Message }
   })()
   return _lib
 }
+
+const min = (a: bigint, b: bigint): bigint => (a < b ? a : b)
 
 const ov = (x: any): any => (x == null ? null : typeof x.value === 'function' ? x.value() : '_value' in x ? x._value : x)
 
@@ -98,7 +101,7 @@ function reparseEdicts(rawTxHex: string, lib: Lib): Edict[] {
   }
 }
 
-type Stone = { mint: string | null; pointer: number | null; edicts: Edict[] }
+type Stone = { mint: string | null; pointer: number | null; edicts: Edict[]; cenotaph: boolean }
 function decodeStone(hex: string, lib: Lib): Stone | null {
   let opt: any
   try {
@@ -112,10 +115,29 @@ function decodeStone(hex: string, lib: Lib): Stone | null {
   // edicts via reparseEdicts (runelib mis-decodes >=2); mint/pointer from decipher are fine.
   const edicts = reparseEdicts(hex, lib)
   const ptr = ov(s.pointer)
-  return { mint: mint && mint.block != null ? `${mint.block}:${mint.idx}` : null, pointer: typeof ptr === 'number' ? ptr : null, edicts }
+  // CENOTAPH: Runestone.decipher() DROPS Message.flaws, so a cenotaph (a runestone with a
+  // decode flaw — out-of-range edict, supply overflow, unrecognized even tag, …) is silently
+  // returned as a normal runestone. Recompute the Message and check its flaws; a cenotaph
+  // BURNS every rune in the tx, so allocate() must route nothing to the outputs.
+  let cenotaph = false
+  try {
+    const tx = lib.b.Transaction.fromHex(hex)
+    const payloadOpt = lib.Runestone.payload(tx)
+    if (payloadOpt?.isSome?.()) {
+      const intsOpt = lib.Runestone.integers(payloadOpt.value())
+      const msg = lib.Message.from_integers(tx, intsOpt.value())
+      if (msg && Number(msg.flaws ?? 0) !== 0) cenotaph = true
+    }
+  } catch {
+    /* can't recompute flaws → trust decipher's view (not a cenotaph) */
+  }
+  return { mint: mint && mint.block != null ? `${mint.block}:${mint.idx}` : null, pointer: typeof ptr === 'number' ? ptr : null, edicts, cenotaph }
 }
 
-function allocate(outScripts: Uint8Array[], stone: Stone | null, inputRunes: Map<string, bigint>) {
+/** Allocate input runes (+ a mint of `mintPerMint`) across the tx outputs per the runestone.
+    `mintPerMint` is resolved per-rune by the caller (NOT a hardcoded map) so etched runes with
+    real Terms (e.g. NOOK) are credited correctly. A cenotaph burns everything. */
+function allocate(outScripts: Uint8Array[], stone: Stone | null, inputRunes: Map<string, bigint>, mintPerMint = 0n) {
   const n = outScripts.length
   const isOR = (k: number) => outScripts[k]?.[0] === 0x6a
   const elig: number[] = []
@@ -125,14 +147,38 @@ function allocate(outScripts: Uint8Array[], stone: Stone | null, inputRunes: Map
   const burned = new Map<string, bigint>()
   const add = (m: Map<string, bigint>, id: string, a: bigint) => m.set(id, (m.get(id) ?? 0n) + a)
   const slot = (k: number) => out.get(k) ?? out.set(k, new Map()).get(k)!
+  if (stone?.mint && mintPerMint > 0n) add(un, stone.mint, mintPerMint)
+  // a cenotaph burns ALL runes in the tx (input + any mint) — nothing reaches the outputs
+  if (stone?.cenotaph) {
+    for (const [id, a] of un) if (a > 0n) burned.set(id, a)
+    return { out, burned }
+  }
   if (stone) {
-    if (stone.mint) add(un, stone.mint, PERMINT[stone.mint] ?? 0n)
     for (const ed of stone.edicts) {
       const have = un.get(ed.id) ?? 0n
-      if (ed.output < 0 || ed.output >= n || isOR(ed.output)) continue
-      const g = ed.amount === 0n ? have : ed.amount < have ? ed.amount : have
-      add(slot(ed.output), ed.id, g)
-      un.set(ed.id, have - g)
+      if (have <= 0n && ed.amount > 0n) continue
+      if (ed.output === n) {
+        // output == numOuts ⇒ distribute to EVERY eligible output (Casey "split")
+        const m = elig.length
+        if (m === 0) continue
+        if (ed.amount === 0n) {
+          const base = have / BigInt(m)
+          const rem = have % BigInt(m)
+          elig.forEach((k, j) => add(slot(k), ed.id, base + (BigInt(j) < rem ? 1n : 0n)))
+          un.set(ed.id, 0n)
+        } else {
+          for (const k of elig) {
+            const give = min(ed.amount, un.get(ed.id) ?? 0n)
+            add(slot(k), ed.id, give)
+            un.set(ed.id, (un.get(ed.id) ?? 0n) - give)
+          }
+        }
+      } else {
+        if (ed.output < 0 || ed.output >= n || isOR(ed.output)) continue
+        const g = ed.amount === 0n ? have : ed.amount < have ? ed.amount : have
+        add(slot(ed.output), ed.id, g)
+        un.set(ed.id, have - g)
+      }
     }
   }
   const ptr = stone && stone.pointer != null ? stone.pointer : elig.length ? elig[0] : null
@@ -167,8 +213,11 @@ async function makeTracer(lib: Lib) {
         }
         for (const [id, a] of r) inR.set(id, (inR.get(id) ?? 0n) + a)
       }
+    // resolve the mint's per-mint amount from its etching Terms (NOT a hardcoded map), so an
+    // etched rune (NOOK) is credited right; reserved 1:0=NINTONDO is 1 (resolveRune is cached).
+    const mintPerMint = stone?.mint ? (await resolveRune(stone.mint)).perMintAmount : 0n
     const outScripts = lib.b.Transaction.fromHex(hex).outs.map((o: any) => o.script)
-    const res = allocate(outScripts, stone, inR).out.get(vout) ?? new Map()
+    const res = allocate(outScripts, stone, inR, mintPerMint).out.get(vout) ?? new Map()
     memo.set(key, res)
     return res
   }
@@ -227,6 +276,9 @@ function checkOfferBinding(psbt: any, offer: Offer, lib: Lib): string | null {
     return 'Offer seller address is invalid.'
   }
   if (Buffer.compare(Buffer.from(psbt.txOutputs[0].script), Buffer.from(payScript)) !== 0) return 'Offer payment output does not match the seller address.'
+  // the relay's advertised price must equal the PSBT's committed payment (the price the seller
+  // actually signed under SINGLE) — otherwise the board/sweep can bait with a fake price.
+  if (offer.price != null && psbt.txOutputs[0].value !== offer.price) return 'Offer price does not match the signed payment output.'
   return null
 }
 
@@ -252,6 +304,7 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
     const keys = [...content.keys()]
     if (keys.length !== 1) return { error: `Seller UTXO holds ${keys.length} runes; only single-rune swaps are supported.` }
     const id = keys[0]
+    if (offer.rune_id && id !== offer.rune_id) return { error: 'The traced rune does not match the advertised rune id.' }
     const amount = content.get(id)!
 
     // Classify the buyer address up front (fail fast on a legacy type, before the funding
@@ -309,7 +362,7 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
     // DECODED Stone ({mint,pointer,edicts:[{id:"block:idx",amount,output}]}) — feeding it
     // the raw runelib Runestone object misreads every field and false-flags a burn. Build
     // the decoded literal that mirrors exactly what stone.encipher() commits.
-    const guardStone: Stone = { mint: null, pointer: null, edicts: [{ id, amount, output: 2 }] }
+    const guardStone: Stone = { mint: null, pointer: null, edicts: [{ id, amount, output: 2 }], cenotaph: false }
     const outScripts: Uint8Array[] = psbt.txOutputs.map((o: any) => o.script)
     const g = allocate(outScripts, guardStone, content)
     if (g.burned.size) return { error: 'Guard: a rune would be burned. Refusing.' }
@@ -363,13 +416,27 @@ export async function finalizeAndBroadcast(signed: string, expect: { runeId: str
     const lib = await getLib()
     const hex = toFinalTxHex(signed, lib)
     const tx = lib.b.Transaction.fromHex(hex)
-    // independent final guard on the assembled tx
     const trace = await makeTracer(lib)
-    const content = await trace(expect.runeTxid, expect.runeVout)
-    if (content === null) return { error: 'final guard: cannot trace seller content' }
+    // Trace EVERY input of the FINAL signed tx (not just the expected seller). A malicious
+    // wallet could swap the funding for a rune-bearing UTXO or splice in an extra rune input —
+    // the guard must see the TRUE input runes, confirm the seller input is consumed, and that
+    // no unexpected rune is present, before allocating against the real stone.
+    const inSum = new Map<string, bigint>()
+    let sawSeller = false
+    for (const vin of tx.ins) {
+      const itxid = Buffer.from(vin.hash).reverse().toString('hex')
+      const ivout = vin.index
+      if (itxid === expect.runeTxid && ivout === expect.runeVout) sawSeller = true
+      const c = await trace(itxid, ivout)
+      if (c === null) return { error: 'final guard: cannot trace a tx input — NOT broadcasting' }
+      for (const [id, a] of c) inSum.set(id, (inSum.get(id) ?? 0n) + a)
+    }
+    if (!sawSeller) return { error: 'final guard: the seller rune input is not in the signed tx — NOT broadcasting' }
+    for (const [id, a] of inSum) if (id !== expect.runeId && a > 0n) return { error: 'final guard: an unexpected rune is in the inputs — NOT broadcasting' }
+    if ((inSum.get(expect.runeId) ?? 0n) !== expect.amount) return { error: 'final guard: input rune total changed — NOT broadcasting' }
     const stone = decodeStone(hex, lib)
     const outScripts = tx.outs.map((o: any) => o.script)
-    const g = allocate(outScripts, stone, content)
+    const g = allocate(outScripts, stone, inSum)
     if (g.burned.size) return { error: 'final guard: rune would burn — NOT broadcasting' }
     if ((g.out.get(2)?.get(expect.runeId) ?? 0n) !== expect.amount) return { error: 'final guard: buyer would not receive the full rune — NOT broadcasting' }
     const res = await fetch(`${API}/tx`, { method: 'POST', body: hex })
@@ -440,6 +507,7 @@ export async function buildBatchTake(offers: Offer[], buyerAddress: string): Pro
       const keys = [...content.keys()]
       if (keys.length !== 1) return { error: 'A seller UTXO holds multiple runes — not sweepable.' }
       const id = keys[0]
+      if (offer.rune_id && id !== offer.rune_id) return { error: 'A traced rune does not match its advertised rune id.' }
       if (runeId === null) runeId = id
       else if (id !== runeId) return { error: 'The sweep mixes different runes.' }
       totalAmount += content.get(id)!
@@ -503,7 +571,7 @@ export async function buildBatchTake(offers: Offer[], buyerAddress: string): Pro
     if (realFee < 300) return { error: 'Funding UTXO too small for the sweep after fees.' }
 
     // anti-burn guard on the would-be outputs (summed input runes)
-    const guardStone: Stone = { mint: null, pointer: null, edicts: [{ id: runeId, amount: totalAmount, output: recvOut }] }
+    const guardStone: Stone = { mint: null, pointer: null, edicts: [{ id: runeId, amount: totalAmount, output: recvOut }], cenotaph: false }
     const outScripts: Uint8Array[] = psbt.txOutputs.map((o: any) => o.script)
     const g = allocate(outScripts, guardStone, new Map([[runeId, totalAmount]]))
     if (g.burned.size) return { error: 'Guard: a rune would be burned. Refusing the sweep.' }
@@ -541,16 +609,25 @@ export async function finalizeAndBroadcastBatch(
     const hex = toFinalTxHex(signed, lib)
     const tx = lib.b.Transaction.fromHex(hex)
     const trace = await makeTracer(lib)
-    let sum = 0n
-    for (const s of expect.sellers) {
-      const c = await trace(s.txid, s.vout)
-      if (c === null) return { error: 'final guard: cannot trace a seller' }
-      sum += c.get(expect.runeId) ?? 0n
+    // Trace EVERY input of the FINAL tx (sellers + funding) so the guard sees the TRUE input
+    // runes — confirm each expected seller input is consumed, and no UNEXPECTED rune slipped in.
+    const want = new Set(expect.sellers.map((s) => `${s.txid}:${s.vout}`))
+    const seen = new Set<string>()
+    const inSum = new Map<string, bigint>()
+    for (const vin of tx.ins) {
+      const op = `${Buffer.from(vin.hash).reverse().toString('hex')}:${vin.index}`
+      if (want.has(op)) seen.add(op)
+      const c = await trace(Buffer.from(vin.hash).reverse().toString('hex'), vin.index)
+      if (c === null) return { error: 'final guard: cannot trace a tx input — NOT broadcasting' }
+      for (const [id, a] of c) inSum.set(id, (inSum.get(id) ?? 0n) + a)
     }
+    if (seen.size !== want.size) return { error: 'final guard: a selected seller input is missing from the signed tx — NOT broadcasting' }
+    for (const [id, a] of inSum) if (id !== expect.runeId && a > 0n) return { error: 'final guard: an unexpected rune is in the inputs — NOT broadcasting' }
+    const sum = inSum.get(expect.runeId) ?? 0n
     if (sum !== expect.amount) return { error: 'final guard: traced sum changed — NOT broadcasting' }
     const stone = decodeStone(hex, lib)
     const outScripts = tx.outs.map((o: any) => o.script)
-    const g = allocate(outScripts, stone, new Map([[expect.runeId, sum]]))
+    const g = allocate(outScripts, stone, inSum)
     if (g.burned.size) return { error: 'final guard: rune would burn — NOT broadcasting' }
     if ((g.out.get(expect.recvOut)?.get(expect.runeId) ?? 0n) !== sum) return { error: 'final guard: full rune would not reach you — NOT broadcasting' }
     const res = await fetch(`${API}/tx`, { method: 'POST', body: hex })

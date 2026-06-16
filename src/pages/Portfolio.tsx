@@ -39,17 +39,16 @@ export function Portfolio() {
   const [cancelling, setCancelling] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!address) {
-      setBal({ state: 'idle', bells: null, txCount: 0 })
-      setActivity([])
-      setRunes({ state: 'idle', rows: [], capped: false })
-      setMyOffers({ state: 'idle', rows: [] })
-      return
-    }
+    // No-address case is handled by the early return in render (ConnectWallet), so we don't
+    // reset state here. The synchronous loading-sets below are an intentional fetch-on-change
+    // pattern (the data comes from electrs, not React) — fine to flag-suppress.
+    if (!address) return
     let alive = true
+    /* eslint-disable react-hooks/set-state-in-effect */
     setBal({ state: 'loading', bells: null, txCount: 0 })
     setRunes({ state: 'loading', rows: [], capped: false })
     setMyOffers({ state: 'loading', rows: [] })
+    /* eslint-enable react-hooks/set-state-in-effect */
     fetchBellsBalance(address).then((r) => {
       if (alive) setBal('error' in r ? { state: 'error', bells: null, txCount: 0 } : { state: 'idle', bells: r.bells, txCount: r.txCount })
     })

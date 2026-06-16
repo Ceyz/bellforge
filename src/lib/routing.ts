@@ -12,14 +12,14 @@ export function psbtMetrics(amountIn: number): RouteMetrics {
 }
 
 /** Pools are R&D — NO simulation, NO projection. Always null today. */
-export function poolMetrics(_amountIn: number): RouteMetrics {
+export function poolMetrics(): RouteMetrics {
   return { route: 'pool', price: null, slippagePct: null }
 }
 
 /** Best execution = lowest slippage. Pool null ⇒ PSBT always wins (today). */
 export function smartRoute(amountIn: number): RouteId {
   const p = psbtMetrics(amountIn)
-  const q = poolMetrics(amountIn)
+  const q = poolMetrics()
   if (q.slippagePct == null) return 'psbt'
   return q.slippagePct <= (p.slippagePct ?? Infinity) ? 'pool' : 'psbt'
 }

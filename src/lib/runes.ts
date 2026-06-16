@@ -12,6 +12,8 @@
 // runelib is CJS + needs a global Buffer (polyfilled in main.tsx) and pulls in
 // bitcoinjs-lib; both are DYNAMICALLY imported so they stay out of the main bundle.
 // ──────────────────────────────────────────────────────────────────────────
+/* eslint-disable @typescript-eslint/no-explicit-any -- runelib + bitcoinjs-lib are untyped
+   CJS, loaded via dynamic import(); `any` is the deliberate interop boundary (the Lib type). */
 import { ELECTRS } from '../config'
 
 const API = ELECTRS.mainnet
