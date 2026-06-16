@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
+import { fetchOffers, type Offer } from '../lib/offers'
+import { EXPLORER } from '../config'
 
 /* Illustrative book — clearly labelled a preview. No real market exists pre-mainnet. */
 const ASKS = [
@@ -195,6 +197,107 @@ export function Trade() {
           </p>
         </div>
       </div>
+
+      <RuneOffers />
     </>
+  )
+}
+
+const RUNE_NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOOK•IN•BELLS' }
+const short = (a: string) => (a.length > 16 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a)
+function ago(sec: number) {
+  const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
+  if (d < 60) return `${d}s`
+  if (d < 3600) return `${Math.floor(d / 60)}m`
+  if (d < 86400) return `${Math.floor(d / 3600)}h`
+  return `${Math.floor(d / 86400)}d`
+}
+
+/** Live rune-swap offers from the relay. Real atomic swaps (SINGLE|ACP) — unlike the
+    illustrative $BOUND book above. Read-only for now: creating/taking runs through the
+    operator rune-swap tooling until a wallet flow is validated. */
+function RuneOffers() {
+  const [state, setState] = useState<'loading' | 'unconfigured' | 'error' | 'ok'>('loading')
+  const [offers, setOffers] = useState<Offer[]>([])
+  useEffect(() => {
+    let alive = true
+    fetchOffers().then((r) => {
+      if (!alive) return
+      if ('unconfigured' in r) setState('unconfigured')
+      else if ('error' in r) setState('error')
+      else {
+        setOffers(r.offers)
+        setState('ok')
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  const note = (msg: string) => <div className="rounded-btn border border-dashed border-ink-600 p-6 text-center text-sm text-text-mid">{msg}</div>
+  return (
+    <div className="mt-6 rounded-card border border-ink-600 bg-ink-800/60 p-5">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="font-display text-text-hi">Rune swaps · P2P</h3>
+        <span className="font-micro text-[10px] uppercase tracking-wide text-text-lo">{state === 'ok' ? `${offers.length} live` : state}</span>
+      </div>
+      <p className="mb-4 text-xs text-text-lo">
+        Real atomic swaps: a seller signs a SIGHASH_SINGLE|ANYONECANPAY offer, a buyer completes it. No custody, no AMM, no new opcodes — proven on-chain.
+      </p>
+      {state === 'unconfigured'
+        ? note('Offer relay not configured yet — it lights up once the Worker is deployed.')
+        : state === 'error'
+          ? note('Relay unreachable right now.')
+          : state === 'loading'
+            ? note('Loading offers…')
+            : offers.length === 0
+              ? note('No live rune offers. Create one with the rune-swap tooling.')
+              : (
+                <div className="overflow-hidden rounded-btn border border-ink-600">
+                  <table className="w-full text-sm">
+                    <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
+                      <tr>
+                        <th className="px-4 py-2 font-medium">Rune</th>
+                        <th className="px-4 py-2 font-medium">Price</th>
+                        <th className="px-4 py-2 font-medium">Seller</th>
+                        <th className="px-4 py-2 font-medium">Age</th>
+                        <th className="px-4 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink-600">
+                      {offers.map((o) => (
+                        <tr key={o.id}>
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-text-hi">{RUNE_NAMES[o.rune_id] ?? o.rune_id}</span>
+                            {o.amount_hint && <span className="block text-[10px] text-text-lo">~{o.amount_hint} units</span>}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-text-mid">{o.price.toLocaleString()} sats</td>
+                          <td className="px-4 py-3">
+                            <a href={`${EXPLORER}/address/${o.seller_addr}`} target="_blank" rel="noopener noreferrer" className="font-mono text-text-lo transition hover:text-forge-400">
+                              {short(o.seller_addr)}
+                            </a>
+                          </td>
+                          <td className="px-4 py-3 text-text-lo">{ago(o.created_at)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              disabled
+                              title="Taking runs through the rune-swap tooling for now; a wallet flow lands after the safety validation."
+                              className="cursor-not-allowed rounded-btn bg-ink-700 px-3 py-1.5 text-xs font-medium text-text-lo"
+                            >
+                              Take
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+      <p className="mt-3 text-[11px] leading-relaxed text-text-lo">
+        Creating + taking currently runs through the operator <span className="font-mono">rune-swap</span> tooling (already proven on-chain). A wallet
+        flow lands after we validate the Nintondo wallet signs SINGLE|ACP safely on a rune UTXO.
+      </p>
+    </div>
   )
 }
