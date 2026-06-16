@@ -298,6 +298,185 @@ export async function finalizeAndBroadcast(signed: string, expect: { runeId: str
   }
 }
 
+// ── BATCHED sweep: take N offers in ONE tx (Magic-Eden msigner style) ────────────────
+// INDEX-MIRRORED layout (the load-bearing rule, from the SINGLE|ACP sighash analysis):
+//   inputs:  [seller_0 rune @0, seller_1 rune @1, …, seller_{n-1} rune @(n-1), buyer funding @n]
+//   outputs: [pay_0 @0, pay_1 @1, …, pay_{n-1} @(n-1), runestone @n, buyer recv @(n+1), change @(n+2)]
+// Each seller signed SINGLE|ACP at THEIR input index 0 → output 0 = their payment. BIP143's
+// SINGLE hashOutputs commits to vout[nIn] (the input's FINAL index) and ANYONECANPAY drops the
+// input-set commitment — so placing seller_k's input at index k AND their payment at output k
+// makes the SAME sighash the seller signed (same outpoint + same paired output), keeping every
+// seller sig valid. ONE runestone edicts the SUMMED traced amount to the buyer recv. The
+// anti-burn guard runs on the COMBINED tx with the union of all traced contents.
+
+export type BatchTakePlan = {
+  psbtB64: string
+  buyerInputIndex: number
+  recvOut: number
+  runeId: string
+  runeName: string
+  amount: bigint // summed across all offers
+  offerCount: number
+  totalPrice: number
+  fee: number
+  change: number
+  taproot: boolean
+  sellers: { txid: string; vout: number }[]
+}
+
+/** Build ONE tx that takes all `offers` (same rune). Never signs/broadcasts. The buyer signs
+    only their funding input (index n); finalizeAndBroadcastBatch guards + broadcasts. */
+export async function buildBatchTake(offers: Offer[], buyerAddress: string): Promise<BatchTakePlan | { error: string }> {
+  try {
+    if (offers.length === 0) return { error: 'No offers selected.' }
+    const lib = await getLib()
+    const trace = await makeTracer(lib)
+
+    const buyerSpk = lib.b.address.toOutputScript(buyerAddress, BELLS)
+    const isP2WPKH = buyerSpk.length === 22 && buyerSpk[0] === 0x00 && buyerSpk[1] === 0x14
+    const isP2TR = buyerSpk.length === 34 && buyerSpk[0] === 0x51 && buyerSpk[1] === 0x20
+    if (!isP2WPKH && !isP2TR) return { error: 'Your wallet address type is unsupported (need bel1q… or bel1p…).' }
+
+    // independently trace + validate every offer; they must all be the SAME single rune
+    let runeId: string | null = null
+    let totalAmount = 0n
+    let totalPrice = 0
+    let totalInVal = 0
+    const sellerIns: { hash: string; index: number; witnessUtxo: any; sign: any }[] = []
+    const sellerOuts: { script: Uint8Array; value: number }[] = []
+    const sellers: { txid: string; vout: number }[] = []
+    for (const offer of offers) {
+      const p = lib.b.Psbt.fromBase64(offer.psbt, { network: BELLS })
+      if (p.txInputs.length !== 1 || p.txOutputs.length !== 1) return { error: 'A selected offer is not a bare SINGLE|ACP listing.' }
+      const txid = Buffer.from(p.txInputs[0].hash).reverse().toString('hex')
+      const vout = p.txInputs[0].index
+      const content = await trace(txid, vout)
+      if (content === null) return { error: 'Could not fully trace a seller rune UTXO — refusing the sweep.' }
+      const keys = [...content.keys()]
+      if (keys.length !== 1) return { error: 'A seller UTXO holds multiple runes — not sweepable.' }
+      const id = keys[0]
+      if (runeId === null) runeId = id
+      else if (id !== runeId) return { error: 'The sweep mixes different runes.' }
+      totalAmount += content.get(id)!
+      const inp = p.data.inputs[0]
+      const wu = inp.witnessUtxo
+      if (!wu) return { error: 'A selected offer is missing its witnessUtxo.' }
+      totalInVal += wu.value
+      totalPrice += p.txOutputs[0].value
+      // carry the seller's signature fields (P2WPKH partialSig, or taproot tapKeySig)
+      const sign: any = {}
+      if (inp.partialSig) sign.partialSig = inp.partialSig
+      if (inp.tapKeySig) sign.tapKeySig = inp.tapKeySig
+      if (inp.tapInternalKey) sign.tapInternalKey = inp.tapInternalKey
+      if (inp.sighashType != null) sign.sighashType = inp.sighashType
+      sellerIns.push({ hash: txid, index: vout, witnessUtxo: wu, sign })
+      sellerOuts.push({ script: p.txOutputs[0].script, value: p.txOutputs[0].value })
+      sellers.push({ txid, vout })
+    }
+    if (!runeId) return { error: 'No rune resolved.' }
+
+    // a rune-FREE funding UTXO covering: Σprice + recv dust + fee − Σ(seller input values)
+    const n = offers.length
+    const fee = 1000 + n * 700 // grows with tx size
+    const need = Math.max(0, totalPrice + DUST + fee - totalInVal) + 1000
+    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(buyerAddress)}/utxo`).then((r) => r.json())
+    let fund: any = null
+    let scanned = 0
+    for (const u of utxos) {
+      if (scanned >= 60 || fund) break
+      if (u.value < need) continue
+      scanned++
+      const c = await trace(u.txid, u.vout)
+      if (c !== null && c.size === 0) fund = u
+    }
+    if (!fund) return { error: `No rune-free funding UTXO ≥ ${need} sats in your wallet for a ${n}-offer sweep.` }
+
+    // assemble — index-mirrored
+    const psbt = new lib.b.Psbt({ network: BELLS })
+    sellerIns.forEach((si, k) => {
+      psbt.addInput({ hash: si.hash, index: si.index, witnessUtxo: si.witnessUtxo, sighashType: si.sign.sighashType ?? 0x83 })
+      const upd: any = {}
+      if (si.sign.partialSig) upd.partialSig = si.sign.partialSig
+      if (si.sign.tapKeySig) upd.tapKeySig = si.sign.tapKeySig
+      if (si.sign.tapInternalKey) upd.tapInternalKey = si.sign.tapInternalKey
+      if (Object.keys(upd).length) psbt.updateInput(k, upd)
+    })
+    psbt.addInput({ hash: fund.txid, index: fund.vout, witnessUtxo: { script: buyerSpk, value: fund.value } }) // index n
+    sellerOuts.forEach((so) => psbt.addOutput(so)) // outputs 0..n-1 (each seller's payment at its index)
+    const [bk, ik] = runeId.split(':').map(Number)
+    const recvOut = n + 1
+    const stone = new lib.Runestone([new lib.Edict(new lib.RuneId(bk, ik), totalAmount, recvOut)], lib.none(), lib.none(), lib.none())
+    psbt.addOutput({ script: stone.encipher(), value: 0 }) // output n  = runestone
+    psbt.addOutput({ script: buyerSpk, value: DUST }) // output n+1 = buyer rune-receive
+    let change = totalInVal + fund.value - totalPrice - DUST - fee
+    let realFee = fee
+    if (change >= DUST) psbt.addOutput({ script: buyerSpk, value: change }) // output n+2
+    else {
+      change = 0
+      realFee = totalInVal + fund.value - totalPrice - DUST
+    }
+    if (realFee < 300) return { error: 'Funding UTXO too small for the sweep after fees.' }
+
+    // anti-burn guard on the would-be outputs (summed input runes)
+    const guardStone: Stone = { mint: null, pointer: null, edicts: [{ id: runeId, amount: totalAmount, output: recvOut }] }
+    const outScripts: Uint8Array[] = psbt.txOutputs.map((o: any) => o.script)
+    const g = allocate(outScripts, guardStone, new Map([[runeId, totalAmount]]))
+    if (g.burned.size) return { error: 'Guard: a rune would be burned. Refusing the sweep.' }
+    if ((g.out.get(recvOut)?.get(runeId) ?? 0n) !== totalAmount) return { error: 'Guard: not all runes would reach you. Refusing.' }
+    for (let k = 0; k < n; k++) if (g.out.get(k)?.get(runeId)) return { error: 'Guard: a seller would get a rune back. Refusing.' }
+
+    return {
+      psbtB64: psbt.toBase64(),
+      buyerInputIndex: n,
+      recvOut,
+      runeId,
+      runeName: NAMES[runeId] ?? runeId,
+      amount: totalAmount,
+      offerCount: n,
+      totalPrice,
+      fee: realFee,
+      change,
+      taproot: isP2TR,
+      sellers,
+    }
+  } catch (e: any) {
+    return { error: String(e?.message || e) }
+  }
+}
+
+/** Finalize the wallet-signed BATCH tx, re-run the anti-burn guard on the FINAL tx (re-trace
+    EVERY seller, sum, verify the full sum lands on the buyer recv with nothing burned), then
+    broadcast. The node independently re-validates all seller SINGLE|ACP sigs at accept. */
+export async function finalizeAndBroadcastBatch(
+  signed: string,
+  expect: { runeId: string; amount: bigint; recvOut: number; sellers: { txid: string; vout: number }[] },
+): Promise<{ txid: string } | { error: string }> {
+  try {
+    const lib = await getLib()
+    const hex = toFinalTxHex(signed, lib)
+    const tx = lib.b.Transaction.fromHex(hex)
+    const trace = await makeTracer(lib)
+    let sum = 0n
+    for (const s of expect.sellers) {
+      const c = await trace(s.txid, s.vout)
+      if (c === null) return { error: 'final guard: cannot trace a seller' }
+      sum += c.get(expect.runeId) ?? 0n
+    }
+    if (sum !== expect.amount) return { error: 'final guard: traced sum changed — NOT broadcasting' }
+    const stone = decodeStone(hex, lib)
+    const outScripts = tx.outs.map((o: any) => o.script)
+    const g = allocate(outScripts, stone, new Map([[expect.runeId, sum]]))
+    if (g.burned.size) return { error: 'final guard: rune would burn — NOT broadcasting' }
+    if ((g.out.get(expect.recvOut)?.get(expect.runeId) ?? 0n) !== sum) return { error: 'final guard: full rune would not reach you — NOT broadcasting' }
+    const res = await fetch(`${API}/tx`, { method: 'POST', body: hex })
+    const body = await res.text()
+    if (!res.ok) return { error: `broadcast rejected: ${body}` }
+    return { txid: body.trim() }
+  } catch (e: any) {
+    return { error: String(e?.message || e) }
+  }
+}
+
 // ── SELLER side: create a SINGLE|ACP offer (the wallet signs the rune UTXO) ──────────
 // SIGHASH_SINGLE (0x03) | SIGHASH_ANYONECANPAY (0x80). The seller's signature commits ONLY
 // to input0 (their rune UTXO outpoint+amount+script) + output0 (their payment) — a buyer

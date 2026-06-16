@@ -5,7 +5,7 @@ import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
 import { fetchOffers, cancelOffer, filterLiveOffers, type Offer } from '../lib/offers'
-import { buildTake, finalizeAndBroadcast, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
+import { buildTake, finalizeAndBroadcast, buildBatchTake, finalizeAndBroadcastBatch, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type BatchTakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
 import { TokenPicker } from '../components/app/TokenPicker'
@@ -133,8 +133,12 @@ export function Trade() {
     <>
       <PageHeader
         title="Trade"
-        subtitle="Swap $BELLS, $BOUND and any OP_CAT token via signed PSBT atomic orders — no custody, no AMM trust."
-        status="soon"
+        subtitle={
+          recvIsRune
+            ? `Trade ${recv.sym} via signed P2P atomic swaps — live on mainnet, no custody, no AMM.`
+            : 'Swap $BELLS, $BOUND and any OP_CAT token via signed PSBT atomic orders — no custody, no AMM trust.'
+        }
+        status={recvIsRune ? 'live-mainnet' : 'soon'}
       />
 
       {recvIsRune ? (
@@ -277,7 +281,16 @@ type SellState = {
   msg?: string
 }
 
-type SweepRun = { total: number; done: number; phase: 'running' | 'done'; results: { id: string; price: number; txid?: string; error?: string }[] }
+/** Sweep = ONE batched tx (1 signature). On failure the user can fall back to taking the
+    offers one-by-one (the proven single-take path), tracked in `seq`. */
+type SweepState = {
+  phase: 'building' | 'confirm' | 'signing' | 'done' | 'error' | 'seq'
+  plan?: BatchTakePlan
+  txid?: string
+  msg?: string
+  offers?: Offer[]
+  seq?: { total: number; done: number; results: { price: number; txid?: string; error?: string }[] }
+}
 const pricePerUnit = (o: Offer) => o.price / Math.max(1, Number(o.amount_hint || '0'))
 
 /** The rune trading surface for ONE rune: chart + live sell orders (cheapest-first) +
@@ -290,7 +303,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   const [take, setTake] = useState<TakeState | null>(null)
   const [sell, setSell] = useState<SellState | null>(null)
   const [budget, setBudget] = useState('')
-  const [sweepRun, setSweepRun] = useState<SweepRun | null>(null)
+  const [sweepState, setSweepState] = useState<SweepState | null>(null)
   const sweepCancelled = useRef(false)
   const [cancelling, setCancelling] = useState<string | null>(null)
 
@@ -340,7 +353,10 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
       units += BigInt(o.amount_hint || '0')
     }
     const pickedIds = new Set(picked.map((o) => o.id))
-    return { picked, pickedIds, spent, units }
+    const floor = runeOffers.length ? pricePerUnit(runeOffers[0]) : 0 // cheapest per-unit (sorted)
+    const cheapest = runeOffers.length ? runeOffers[0].price : 0 // min budget to fill anything
+    const allCost = runeOffers.reduce((s, o) => s + o.price, 0)
+    return { picked, pickedIds, spent, units, floor, cheapest, allCost }
   }, [runeOffers, budget])
 
   /** One full take: build → wallet-sign → finalize+broadcast → mark taken. NEVER throws —
@@ -392,34 +408,66 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
     setTake({ ...take, phase: 'done', txid: res.txid })
   }
 
-  /** Sweep: take the budget-selected offers cheapest-first, SEQUENTIALLY — each is its own
-      tx + wallet signature, reusing the audited single-offer buildTake. Batching all offers
-      into ONE tx is possible (Magic-Eden msigner style) but needs a different index-mirrored
-      builder: seller_k input @ index k ↔ payment @ index k, then a single runestone edicting
-      the SUMMED amount + a combined anti-burn guard + re-validating every seller 0x83 sig.
-      That's a separate audited path; sequential is the safe v1. Stops on the first failure
-      (rejected signature / broadcast) → a clean partial fill. */
+  /** Sweep: take the budget-selected offers in ONE batched tx (index-mirrored, 1 signature).
+      buildBatchTake conserves every seller's SINGLE|ACP sig + edicts the summed rune to you;
+      finalizeAndBroadcastBatch re-guards on the final tx before broadcast. On any failure the
+      user can fall back to taking the offers one-by-one (the proven single-take path). */
   async function startSweep() {
     if (!address) {
-      setSweepRun({ total: 0, done: 0, phase: 'done', results: [{ id: '-', price: 0, error: 'Connect your Bells wallet first.' }] })
+      setSweepState({ phase: 'error', msg: 'Connect your Bells wallet first (top right).' })
       return
     }
     const picked = sweep.picked
     if (!picked.length) return
-    sweepCancelled.current = false
-    const results: SweepRun['results'] = []
-    setSweepRun({ total: picked.length, done: 0, phase: 'running', results })
-    for (const o of picked) {
-      if (sweepCancelled.current) return // user closed the modal mid-sweep → stop, leave it dismissed
-      const res = await takeOne(o) // never throws
-      if (sweepCancelled.current) return
-      const row = 'txid' in res ? { id: o.id, price: o.price, txid: res.txid } : { id: o.id, price: o.price, error: res.error }
-      results.push(row)
-      setSweepRun({ total: picked.length, done: results.length, phase: 'running', results: [...results] })
-      if ('txid' in res) setOffers((os) => os.filter((x) => x.id !== o.id))
-      else break // partial fill on the first error (user rejected / broadcast failed)
+    setSweepState({ phase: 'building', offers: picked })
+    const r = await buildBatchTake(picked, address)
+    if ('error' in r) setSweepState({ phase: 'error', msg: r.error, offers: picked })
+    else setSweepState({ phase: 'confirm', plan: r, offers: picked })
+  }
+
+  async function confirmSweep() {
+    if (!sweepState?.plan || !address) return
+    const p = sweepState.plan
+    setSweepState({ ...sweepState, phase: 'signing' })
+    try {
+      const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
+      if (!nin?.signPsbt) throw new Error('Wallet signPsbt unavailable.')
+      const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
+      const signed = await nin.signPsbt(p.psbtB64, { autoFinalized: false, toSignInputs: [toSign] })
+      const s = signed as Record<string, string>
+      const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
+      if (!signedStr) throw new Error('Wallet returned no signed PSBT.')
+      const res = await finalizeAndBroadcastBatch(signedStr, { runeId: p.runeId, amount: p.amount, recvOut: p.recvOut, sellers: p.sellers })
+      if ('error' in res) {
+        setSweepState({ ...sweepState, phase: 'error', msg: res.error })
+        return
+      }
+      if (RELAY) sweepState.offers?.forEach((o) => fetch(`${RELAY}/offers/${o.id}/taken`, { method: 'POST' }).catch(() => {}))
+      const ids = new Set(sweepState.offers?.map((o) => o.id))
+      setOffers((os) => os.filter((o) => !ids.has(o.id)))
+      setSweepState({ ...sweepState, phase: 'done', txid: res.txid })
+    } catch (e) {
+      setSweepState({ ...sweepState, phase: 'error', msg: walletErr(e) })
     }
-    if (!sweepCancelled.current) setSweepRun((r) => (r ? { ...r, phase: 'done' } : r))
+  }
+
+  /** Fallback: take the selected offers one-by-one (proven single-take, N signatures). */
+  async function sweepSequential() {
+    const picked = sweepState?.offers ?? sweep.picked
+    if (!address || !picked.length) return
+    sweepCancelled.current = false
+    const results: NonNullable<SweepState['seq']>['results'] = []
+    setSweepState({ phase: 'seq', offers: picked, seq: { total: picked.length, done: 0, results } })
+    for (const o of picked) {
+      if (sweepCancelled.current) return
+      const res = await takeOne(o)
+      if (sweepCancelled.current) return
+      results.push('txid' in res ? { price: o.price, txid: res.txid } : { price: o.price, error: res.error })
+      setSweepState({ phase: 'seq', offers: picked, seq: { total: picked.length, done: results.length, results: [...results] } })
+      if ('txid' in res) setOffers((os) => os.filter((x) => x.id !== o.id))
+      else break
+    }
+    if (!sweepCancelled.current) setSweepState((st) => (st?.seq ? { ...st, phase: 'done' } : st))
   }
 
   // ── SELLER: create a SINGLE|ACP offer (signing never broadcasts — no burn risk) ──
@@ -475,7 +523,6 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   }
 
   const note = (msg: string) => <div className="rounded-btn border border-dashed border-ink-600 p-6 text-center text-sm text-text-mid">{msg}</div>
-  const totalUnits = runeOffers.reduce((s, o) => s + BigInt(o.amount_hint || '0'), 0n)
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -516,7 +563,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                             {runeOffers.map((o) => {
                               const inSweep = sweep.pickedIds.has(o.id)
                               return (
-                                <tr key={o.id} className={inSweep ? 'bg-forge-500/[0.07]' : ''}>
+                                <tr key={o.id} className={inSweep ? 'bg-forge-500/[0.07]' : 'transition-colors hover:bg-ink-700/40'}>
                                   <td className="px-4 py-3 font-mono text-text-hi">
                                     {o.price.toLocaleString()} <span className="text-[10px] text-text-lo">sats</span>
                                     {inSweep && <span className="ml-1.5 font-micro text-[8px] uppercase tracking-wide text-forge-300">in sweep</span>}
@@ -573,7 +620,11 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
           <div className={well}>
             <div className="mb-1 flex items-center justify-between text-xs text-text-lo">
               <span>Budget</span>
-              <span className="font-mono">{state === 'ok' ? `${runeOffers.length} offers · ~${totalUnits.toString()} ${rune.sym}` : ''}</span>
+              {state === 'ok' && runeOffers.length > 0 && (
+                <button type="button" onClick={() => setBudget(String(sweep.allCost))} className="font-mono text-forge-400 transition hover:text-forge-300">
+                  Fill all · {sweep.allCost.toLocaleString()} sats
+                </button>
+              )}
             </div>
             <div className="flex items-center justify-between gap-3">
               <input value={budget} onChange={(e) => setBudget(e.target.value)} className={inputCls} placeholder="0" inputMode="numeric" />
@@ -582,7 +633,8 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
           </div>
 
           <div className="rounded-btn border border-ink-600 bg-ink-900 p-3 text-sm">
-            <div className="flex justify-between"><span className="text-text-lo">Fills</span><span className="font-mono text-text-hi">{sweep.picked.length} offer{sweep.picked.length === 1 ? '' : 's'}</span></div>
+            <div className="flex justify-between"><span className="text-text-lo">Floor</span><span className="font-mono text-text-mid">{state === 'ok' && runeOffers.length ? `${sweep.floor.toLocaleString(undefined, { maximumFractionDigits: 2 })} sats/${rune.sym}` : '—'}</span></div>
+            <div className="mt-1 flex justify-between"><span className="text-text-lo">Fills</span><span className="font-mono text-text-hi">{sweep.picked.length} offer{sweep.picked.length === 1 ? '' : 's'}</span></div>
             <div className="mt-1 flex justify-between"><span className="text-text-lo">You receive</span><span className="font-mono text-text-hi">~{sweep.units.toString()} {rune.sym}</span></div>
             <div className="mt-1 flex justify-between"><span className="text-text-lo">You pay</span><span className="font-mono text-text-mid">{sweep.spent.toLocaleString()} sats</span></div>
           </div>
@@ -593,10 +645,15 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
             disabled={!sweep.picked.length}
             className="w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-3 text-sm font-semibold text-ink-950 transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {sweep.picked.length ? `Sweep ${sweep.picked.length} cheapest` : 'Set a budget to sweep'}
+            {sweep.picked.length
+              ? `Sweep ${sweep.picked.length} cheapest · ${sweep.spent.toLocaleString()} sats`
+              : Number(budget) > 0 && sweep.cheapest > 0
+                ? `Min ${sweep.cheapest.toLocaleString()} sats to fill one`
+                : 'Set a budget to sweep'}
           </button>
           <p className="text-center text-[11px] leading-relaxed text-text-lo">
-            Fills the cheapest offers up to your budget. Each is its own atomic swap — your wallet signs once per offer ({sweep.picked.length || 'N'} signature{sweep.picked.length === 1 ? '' : 's'}). Stops cleanly if you reject one.
+            Fills the cheapest offers up to your budget in <span className="text-text-mid">one atomic transaction — a single signature</span>. The anti-burn guard
+            verifies every rune lands on you before broadcast.
           </p>
 
           <div className="border-t border-ink-600 pt-4">
@@ -737,43 +794,84 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
         </div>
       )}
 
-      {sweepRun && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => sweepRun.phase === 'done' && setSweepRun(null)}>
+      {sweepState && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => (sweepState.phase === 'done' || sweepState.phase === 'error') && setSweepState(null)}>
           <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
             <h4 className="font-display text-lg text-text-hi">Sweep {rune.sym}</h4>
-            <p className="mt-2 text-sm text-text-mid">
-              {sweepRun.phase === 'running'
-                ? `Taking offer ${sweepRun.done + 1} of ${sweepRun.total} — sign each in your wallet…`
-                : `Done — ${sweepRun.results.filter((r) => r.txid).length} of ${sweepRun.total} filled.`}
-            </p>
-            <div className="mt-4 max-h-60 space-y-2 overflow-y-auto">
-              {sweepRun.results.map((r, i) => (
-                <div key={r.id + i} className="flex items-center justify-between rounded-btn border border-ink-600 bg-ink-900 px-3 py-2 text-xs">
-                  <span className="text-text-lo">{r.price.toLocaleString()} sats</span>
-                  {r.txid ? (
-                    <a href={`${EXPLORER}/tx/${r.txid}`} target="_blank" rel="noopener noreferrer" className="font-mono text-emerald-300 hover:underline">✓ {r.txid.slice(0, 10)}…</a>
-                  ) : (
-                    <span className="max-w-[60%] truncate text-right text-red-300" title={r.error}>✕ {r.error}</span>
-                  )}
+
+            {sweepState.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Tracing {sweepState.offers?.length} offers + building one atomic transaction…</p>}
+            {sweepState.phase === 'signing' && (
+              <>
+                <p className="mt-4 text-sm text-text-mid">Sign once in your wallet — we verify + broadcast…</p>
+                <button type="button" onClick={() => setSweepState(null)} className="mt-4 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-lo">Close</button>
+              </>
+            )}
+
+            {sweepState.phase === 'error' && (
+              <>
+                <p className="mt-4 text-sm text-red-300">{sweepState.msg}</p>
+                {address && (sweepState.offers?.length ?? 0) > 0 && (
+                  <button type="button" onClick={sweepSequential} className="mt-4 w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">
+                    Take one-by-one instead ({sweepState.offers!.length} signatures)
+                  </button>
+                )}
+                <button type="button" onClick={() => setSweepState(null)} className="mt-2 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+
+            {sweepState.phase === 'done' && (
+              <>
+                <p className="mt-4 text-sm text-emerald-300">
+                  {sweepState.txid ? `Sweep broadcast ✓ — the runes are yours.` : `Done — ${sweepState.seq?.results.filter((r) => r.txid).length ?? 0} of ${sweepState.seq?.total ?? 0} filled.`}
+                </p>
+                {sweepState.txid && (
+                  <a href={`${EXPLORER}/tx/${sweepState.txid}`} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all font-mono text-xs text-forge-400 hover:underline">{sweepState.txid}</a>
+                )}
+                <button type="button" onClick={() => setSweepState(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+
+            {sweepState.phase === 'confirm' && sweepState.plan && (
+              <>
+                <dl className="mt-4 space-y-1.5 text-sm">
+                  <div className="flex justify-between"><dt className="text-text-lo">You receive</dt><dd className="font-mono text-text-hi">{sweepState.plan.amount.toString()} {sweepState.plan.runeName}</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">Across</dt><dd className="font-mono text-text-hi">{sweepState.plan.offerCount} offer{sweepState.plan.offerCount === 1 ? '' : 's'}</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">You pay</dt><dd className="font-mono text-text-hi">{sweepState.plan.totalPrice.toLocaleString()} sats</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">Network fee</dt><dd className="font-mono text-text-mid">{sweepState.plan.fee.toLocaleString()} sats</dd></div>
+                </dl>
+                <p className="mt-3 rounded-btn bg-ink-800 p-3 text-[11px] leading-relaxed text-text-lo">
+                  One transaction takes all {sweepState.plan.offerCount} offers — <span className="text-text-mid">a single signature</span>. Each seller's SINGLE|ACP signature stays
+                  valid (index-mirrored); the anti-burn guard verified all {sweepState.plan.amount.toString()} {sweepState.plan.runeName} land on you before broadcast.
+                </p>
+                <div className="mt-5 flex gap-3">
+                  <button type="button" onClick={() => setSweepState(null)} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Cancel</button>
+                  <button type="button" onClick={confirmSweep} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign &amp; broadcast</button>
                 </div>
-              ))}
-              {sweepRun.phase === 'running' && sweepRun.results.length < sweepRun.total && (
-                <div className="rounded-btn border border-dashed border-ink-600 px-3 py-2 text-center text-xs text-text-lo">signing…</div>
-              )}
-            </div>
-            {sweepRun.phase === 'running' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  sweepCancelled.current = true
-                  setSweepRun(null)
-                }}
-                className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi"
-              >
-                Stop sweep
-              </button>
-            ) : (
-              <button type="button" onClick={() => setSweepRun(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+
+            {sweepState.phase === 'seq' && sweepState.seq && (
+              <>
+                <p className="mt-2 text-sm text-text-mid">
+                  {sweepState.seq.done < sweepState.seq.total ? `Taking offer ${sweepState.seq.done + 1} of ${sweepState.seq.total} — sign each…` : `Done — ${sweepState.seq.results.filter((r) => r.txid).length} of ${sweepState.seq.total} filled.`}
+                </p>
+                <div className="mt-4 max-h-60 space-y-2 overflow-y-auto">
+                  {sweepState.seq.results.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-btn border border-ink-600 bg-ink-900 px-3 py-2 text-xs">
+                      <span className="text-text-lo">{r.price.toLocaleString()} sats</span>
+                      {r.txid ? (
+                        <a href={`${EXPLORER}/tx/${r.txid}`} target="_blank" rel="noopener noreferrer" className="font-mono text-emerald-300 hover:underline">✓ {r.txid.slice(0, 10)}…</a>
+                      ) : (
+                        <span className="max-w-[60%] truncate text-right text-red-300" title={r.error}>✕ {r.error}</span>
+                      )}
+                    </div>
+                  ))}
+                  {sweepState.seq.done < sweepState.seq.total && <div className="rounded-btn border border-dashed border-ink-600 px-3 py-2 text-center text-xs text-text-lo">signing…</div>}
+                </div>
+                <button type="button" onClick={() => { sweepCancelled.current = true; setSweepState(null) }} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">
+                  {sweepState.seq.done < sweepState.seq.total ? 'Stop' : 'Close'}
+                </button>
+              </>
             )}
           </div>
         </div>
