@@ -8,6 +8,8 @@ import { fetchOffers, type Offer } from '../lib/offers'
 import { buildTake, finalizeAndBroadcast, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
+import { TokenPicker } from '../components/app/TokenPicker'
+import { getToken, type TokenInfo } from '../lib/tokens'
 
 /* Illustrative book — clearly labelled a preview. No real market exists pre-mainnet. */
 const ASKS = [
@@ -54,7 +56,7 @@ function OrderRow({ p, s, side, i }: { p: number; s: number; side: 'ask' | 'bid'
   )
 }
 
-function Chart() {
+function Chart({ sym }: { sym: string }) {
   const reduce = useReducedMotion()
   // Illustrative line — a calm shape, explicitly not real price data.
   const pts = [8, 14, 11, 18, 16, 22, 19, 26, 24, 30, 28, 33]
@@ -70,7 +72,7 @@ function Chart() {
   return (
     <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-mono text-sm text-text-hi">$BOUND / $BELLS</span>
+        <span className="font-mono text-sm text-text-hi">{sym} / $BELLS</span>
         <span className="font-micro text-[10px] tracking-wide text-text-lo">ILLUSTRATIVE · NO LIVE MARKET</span>
       </div>
       <div className="relative">
@@ -100,10 +102,17 @@ function Chart() {
   )
 }
 
+function scrollToRuneSwaps() {
+  document.getElementById('rune-swaps')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export function Trade() {
   const reduce = useReducedMotion()
   const [mode, setMode] = useState<'market' | 'limit'>('market')
   const [amt, setAmt] = useState('')
+  const [recv, setRecv] = useState<TokenInfo>(() => getToken('bound')!)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const recvIsRune = recv.protocol === 'rune'
   return (
     <>
       <PageHeader
@@ -117,15 +126,27 @@ export function Trade() {
         <span className="text-text-hi">illustrative</span>, not live orders.
       </div>
 
+      {recvIsRune && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-card border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3 text-xs text-text-mid">
+          <span>
+            <span className="font-mono text-text-hi">{recv.sym}</span> is a <span className="text-violet-300">Rune</span>, not an OP_CAT token — it trades{' '}
+            <span className="text-text-hi">live now</span> via signed P2P offers, not the illustrative book below.
+          </span>
+          <button type="button" onClick={scrollToRuneSwaps} className="shrink-0 rounded-btn border border-violet-500/40 px-3 py-1.5 font-medium text-violet-200 transition hover:bg-violet-500/10">
+            Go to Rune swaps ↓
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">
-          <Chart />
+          <Chart sym={recv.sym} />
 
           <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
             <h3 className="font-display text-text-hi">Order book</h3>
             <div className="mt-3 grid grid-cols-3 px-3 pb-1 font-micro text-[10px] uppercase tracking-wide text-text-lo">
               <span>Price ($BELLS)</span>
-              <span className="text-right">Size ($BOUND)</span>
+              <span className="text-right">Size ({recv.sym})</span>
               <span className="text-right">Total</span>
             </div>
             <div className="space-y-px">
@@ -186,19 +207,63 @@ export function Trade() {
             <div className="mb-1 text-xs text-text-lo">You receive</div>
             <div className="flex items-center justify-between gap-3">
               <input className={inputCls} placeholder="0.0" inputMode="decimal" />
-              <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">$BOUND</span>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                title="Pick a token to receive"
+                className="flex items-center gap-1.5 rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600 transition hover:ring-forge-400"
+              >
+                <span>{recv.sym}</span>
+                <span
+                  className={`rounded-pill px-1.5 py-px font-micro text-[8px] uppercase tracking-wide ${
+                    recvIsRune ? 'bg-violet-500/15 text-violet-300' : 'bg-forge-500/15 text-forge-300'
+                  }`}
+                >
+                  {recvIsRune ? 'Rune' : 'OP_CAT'}
+                </span>
+                <span className="text-text-lo">▾</span>
+              </button>
             </div>
           </div>
 
           <RouteSelector amountIn={Number(amt) || 0} />
 
-          <ForgeButton disabled idleLabel={`${mode === 'market' ? 'Swap' : 'Place order'} — opens at mainnet`} />
-          <p className="text-center text-xs text-text-lo">
-            Orders are peer-to-peer signed PSBTs — no custody, no AMM. The book needs no new opcodes, so it
-            ships the day $BOUND is live.
-          </p>
+          {recvIsRune ? (
+            <>
+              <button
+                type="button"
+                onClick={scrollToRuneSwaps}
+                className="w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-3 text-sm font-semibold text-ink-950 transition hover:brightness-110"
+              >
+                Trade {recv.sym} via P2P ↓
+              </button>
+              <p className="text-center text-xs text-text-lo">
+                {recv.sym} is a Rune — it trades today through signed P2P atomic swaps (no AMM, no custody). Create or take an offer in
+                <span className="text-text-mid"> Rune swaps</span> below.
+              </p>
+            </>
+          ) : (
+            <>
+              <ForgeButton disabled idleLabel={`${mode === 'market' ? 'Swap' : 'Place order'} — opens at mainnet`} />
+              <p className="text-center text-xs text-text-lo">
+                Orders are peer-to-peer signed PSBTs — no custody, no AMM. The book needs no new opcodes, so it
+                ships the day {recv.sym} is live.
+              </p>
+            </>
+          )}
         </div>
       </div>
+
+      {pickerOpen && (
+        <TokenPicker
+          exclude={['bells']}
+          onClose={() => setPickerOpen(false)}
+          onSelect={(t) => {
+            setRecv(t)
+            setPickerOpen(false)
+          }}
+        />
+      )}
 
       <RuneOffers />
     </>
@@ -345,7 +410,7 @@ function RuneOffers() {
 
   const note = (msg: string) => <div className="rounded-btn border border-dashed border-ink-600 p-6 text-center text-sm text-text-mid">{msg}</div>
   return (
-    <div className="mt-6 rounded-card border border-ink-600 bg-ink-800/60 p-5">
+    <div id="rune-swaps" className="mt-6 scroll-mt-20 rounded-card border border-ink-600 bg-ink-800/60 p-5">
       <div className="mb-1 flex items-center justify-between">
         <h3 className="font-display text-text-hi">Rune swaps · P2P</h3>
         <div className="flex items-center gap-3">
