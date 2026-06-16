@@ -34,8 +34,16 @@ function getLib(): Promise<Lib> {
   _lib = (async () => {
     const bmod: any = await import('bitcoinjs-lib')
     const rmod: any = await import('runelib')
+    const eccmod: any = await import('@bitcoinerlab/secp256k1')
+    const b = bmod.default ?? bmod
+    // @bitcoinerlab/secp256k1 is pure-CJS: the TinySecp256k1 interface is the namespace
+    // (isXOnlyPoint / xOnlyPointAddTweak live on the object itself, no real `default`).
+    // Without this, address.toOutputScript on a taproot (bel1p) address throws
+    // "No ECC Library provided. You must call initEccLib()". Idempotent + safe for segwit.
+    const ecc = eccmod.isXOnlyPoint ? eccmod : (eccmod.default ?? eccmod)
+    b.initEccLib(ecc)
     const r = rmod.default ?? rmod
-    return { b: bmod.default ?? bmod, Runestone: r.Runestone ?? rmod.Runestone, Edict: r.Edict ?? rmod.Edict, RuneId: r.RuneId ?? rmod.RuneId, none: r.none ?? rmod.none }
+    return { b, Runestone: r.Runestone ?? rmod.Runestone, Edict: r.Edict ?? rmod.Edict, RuneId: r.RuneId ?? rmod.RuneId, none: r.none ?? rmod.none }
   })()
   return _lib
 }
@@ -136,6 +144,7 @@ export type TakePlan = {
   change: number
   sellerAddr: string
   fundingUtxo: string
+  taproot: boolean // buyer funding input is a P2TR keyspend (sign with SIGHASH_DEFAULT) vs P2WPKH (SIGHASH_ALL)
 }
 
 const NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOOK•IN•BELLS' }
@@ -161,6 +170,24 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
     const id = keys[0]
     const amount = content.get(id)!
 
+    // Classify the buyer address up front (fail fast on a legacy type, before the funding
+    // scan). We support a Segwit v0 (P2WPKH, bel1q…) OR a Taproot keyspend (P2TR, bel1p…)
+    // buyer. toOutputScript succeeds for taproot now that ECC is initialised in getLib().
+    // This code never signs or finalises manually — the WALLET signs its own funding input
+    // (ECDSA for p2wpkh, Schnorr keyspend for p2tr) and bitcoinjs finalizeInput auto-routes
+    // by the input's witnessUtxo script type. The ONLY divergence is the wallet sighash
+    // recipe (p2wpkh = SIGHASH_ALL; taproot keyspend = SIGHASH_DEFAULT), surfaced via
+    // `taproot` so confirmTake passes the right toSignInputs. Legacy P2PKH/P2SH have no
+    // witnessUtxo keyspend path → rejected cleanly.
+    const buyerSpk = lib.b.address.toOutputScript(buyerAddress, BELLS)
+    const isP2WPKH = buyerSpk.length === 22 && buyerSpk[0] === 0x00 && buyerSpk[1] === 0x14
+    const isP2TR = buyerSpk.length === 34 && buyerSpk[0] === 0x51 && buyerSpk[1] === 0x20
+    if (!isP2WPKH && !isP2TR)
+      return {
+        error:
+          'Rune swaps need a Native SegWit (bel1q…) or Taproot (bel1p…) wallet address. Your wallet is connected with an unsupported legacy address type — switch the Nintondo account type and reconnect.',
+      }
+
     // a rune-FREE funding UTXO of the buyer with enough sats
     const fee = 2000
     const need = Math.max(0, price + DUST + fee - v0) + 1000
@@ -180,7 +207,6 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
     }
     if (!fund) return { error: `No rune-free funding UTXO >= ${need} sats found in your wallet (need plain $BELLS).` }
 
-    const buyerSpk = lib.b.address.toOutputScript(buyerAddress, BELLS)
     const [bk, ik] = id.split(':').map(Number)
     const stone = new lib.Runestone([new lib.Edict(new lib.RuneId(bk, ik), amount, 2)], lib.none(), lib.none(), lib.none())
     psbt.addInput({ hash: fund.txid, index: fund.vout, witnessUtxo: { script: buyerSpk, value: fund.value } })
@@ -219,6 +245,7 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
       change,
       sellerAddr: offer.seller_addr,
       fundingUtxo: `${fund.txid}:${fund.vout}`,
+      taproot: isP2TR,
     }
   } catch (e: any) {
     return { error: String(e?.message || e) }

@@ -260,7 +260,10 @@ function RuneOffers() {
     try {
       const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
       if (!nin?.signPsbt) throw new Error('Wallet signPsbt unavailable.')
-      const signed = await nin.signPsbt(p.psbtHex, { autoFinalized: false, toSignInputs: [{ index: p.buyerInputIndex, address, sighashTypes: [1] }] })
+      // P2WPKH funding → SIGHASH_ALL (1). Taproot keyspend → SIGHASH_DEFAULT (omit the
+      // whitelist so the wallet uses 0x00; DEFAULT still commits to every output).
+      const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
+      const signed = await nin.signPsbt(p.psbtHex, { autoFinalized: false, toSignInputs: [toSign] })
       const signedHex = typeof signed === 'string' ? signed : ((signed as Record<string, string>)?.psbtHex ?? (signed as Record<string, string>)?.hex ?? '')
       if (!signedHex) throw new Error('Wallet returned no signed PSBT.')
       const res = await finalizeAndBroadcast(signedHex, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
