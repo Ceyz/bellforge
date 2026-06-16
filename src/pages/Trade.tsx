@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
@@ -102,17 +102,32 @@ function Chart({ sym }: { sym: string }) {
   )
 }
 
-function scrollToRuneSwaps() {
-  document.getElementById('rune-swaps')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 export function Trade() {
   const reduce = useReducedMotion()
   const [mode, setMode] = useState<'market' | 'limit'>('market')
   const [amt, setAmt] = useState('')
   const [recv, setRecv] = useState<TokenInfo>(() => getToken('bound')!)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [dir, setDir] = useState<'in' | 'out'>('in') // 'in' = pay $BELLS → receive token; 'out' = the reverse
   const recvIsRune = recv.protocol === 'rune'
+
+  // The selectable token pill (opens the picker) + the static $BELLS pill — placed on
+  // whichever side `dir` puts them so the flip arrow actually swaps pay ↔ receive.
+  const tokenPill = (
+    <button
+      type="button"
+      onClick={() => setPickerOpen(true)}
+      title="Pick a token"
+      className="flex items-center gap-1.5 rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600 transition hover:ring-forge-400"
+    >
+      <span>{recv.sym}</span>
+      <span className={`rounded-pill px-1.5 py-px font-micro text-[8px] uppercase tracking-wide ${recvIsRune ? 'bg-violet-500/15 text-violet-300' : 'bg-forge-500/15 text-forge-300'}`}>
+        {recvIsRune ? 'Rune' : 'OP_CAT'}
+      </span>
+      <span className="text-text-lo">▾</span>
+    </button>
+  )
+  const bellsPill = <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">$BELLS</span>
   return (
     <>
       <PageHeader
@@ -121,138 +136,104 @@ export function Trade() {
         status="soon"
       />
 
-      <div className="mb-5 rounded-card border border-forge-500/25 bg-forge-500/[0.06] px-4 py-3 text-center text-xs text-text-mid">
-        Interface preview — the order book opens at mainnet. The numbers below are{' '}
-        <span className="text-text-hi">illustrative</span>, not live orders.
-      </div>
-
-      {recvIsRune && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-card border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3 text-xs text-text-mid">
-          <span>
-            <span className="font-mono text-text-hi">{recv.sym}</span> is a <span className="text-violet-300">Rune</span>, not an OP_CAT token — it trades{' '}
-            <span className="text-text-hi">live now</span> via signed P2P offers, not the illustrative book below.
-          </span>
-          <button type="button" onClick={scrollToRuneSwaps} className="shrink-0 rounded-btn border border-violet-500/40 px-3 py-1.5 font-medium text-violet-200 transition hover:bg-violet-500/10">
-            Go to Rune swaps ↓
-          </button>
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-6">
-          <Chart sym={recv.sym} />
-
-          <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
-            <h3 className="font-display text-text-hi">Order book</h3>
-            <div className="mt-3 grid grid-cols-3 px-3 pb-1 font-micro text-[10px] uppercase tracking-wide text-text-lo">
-              <span>Price ($BELLS)</span>
-              <span className="text-right">Size ({recv.sym})</span>
-              <span className="text-right">Total</span>
-            </div>
-            <div className="space-y-px">
-              {ASKS.map((o, i) => (
-                <OrderRow key={`a${o.p}`} {...o} side="ask" i={i} />
-              ))}
-            </div>
-            <div className="my-1.5 flex items-center justify-between border-y border-ink-600 px-3 py-1.5 text-xs">
-              <span className="font-mono text-text-hi">0.00450</span>
-              <span className="font-micro text-[10px] tracking-wide text-text-lo">SPREAD 1.3%</span>
-            </div>
-            <div className="space-y-px">
-              {BIDS.map((o, i) => (
-                <OrderRow key={`b${o.p}`} {...o} side="bid" i={i} />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="h-fit space-y-3 rounded-card border border-ink-600 bg-ink-800/60 p-5">
-          <SlidingToggle
-            options={[
-              { id: 'market', label: 'Market' },
-              { id: 'limit', label: 'Limit' },
-            ]}
-            value={mode}
-            onChange={setMode}
-            layoutId="toggle-trade-mode"
-            className="w-full"
-          />
-
-          <div className={well}>
-            <div className="mb-1 text-xs text-text-lo">You pay</div>
-            <div className="flex items-center justify-between gap-3">
-              <input value={amt} onChange={(e) => setAmt(e.target.value)} className={inputCls} placeholder="0.0" inputMode="decimal" />
-              <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">$BELLS</span>
-            </div>
+      {recvIsRune ? (
+        <RuneTradeView rune={recv} pill={tokenPill} />
+      ) : (
+        <>
+          <div className="mb-5 rounded-card border border-forge-500/25 bg-forge-500/[0.06] px-4 py-3 text-center text-xs text-text-mid">
+            Interface preview — the order book opens at mainnet. The numbers below are{' '}
+            <span className="text-text-hi">illustrative</span>, not live orders.
           </div>
 
-          {mode === 'limit' && (
-            <div className={well}>
-              <div className="mb-1 text-xs text-text-lo">Limit price ($BELLS)</div>
-              <input className={`${inputCls} text-base`} placeholder="0.00450" inputMode="decimal" />
+          <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+            <div className="space-y-6">
+              <Chart sym={recv.sym} />
+
+              <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
+                <h3 className="font-display text-text-hi">Order book</h3>
+                <div className="mt-3 grid grid-cols-3 px-3 pb-1 font-micro text-[10px] uppercase tracking-wide text-text-lo">
+                  <span>Price ($BELLS)</span>
+                  <span className="text-right">Size ({recv.sym})</span>
+                  <span className="text-right">Total</span>
+                </div>
+                <div className="space-y-px">
+                  {ASKS.map((o, i) => (
+                    <OrderRow key={`a${o.p}`} {...o} side="ask" i={i} />
+                  ))}
+                </div>
+                <div className="my-1.5 flex items-center justify-between border-y border-ink-600 px-3 py-1.5 text-xs">
+                  <span className="font-mono text-text-hi">0.00450</span>
+                  <span className="font-micro text-[10px] tracking-wide text-text-lo">SPREAD 1.3%</span>
+                </div>
+                <div className="space-y-px">
+                  {BIDS.map((o, i) => (
+                    <OrderRow key={`b${o.p}`} {...o} side="bid" i={i} />
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
 
-          <div className="flex justify-center">
-            <motion.span
-              whileHover={reduce ? undefined : { rotate: 180 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-              className="flex h-8 w-8 cursor-default items-center justify-center rounded-full bg-ink-700 text-forge-400 ring-1 ring-ink-600"
-            >
-              ↓
-            </motion.span>
-          </div>
+            <div className="h-fit space-y-3 rounded-card border border-ink-600 bg-ink-800/60 p-5">
+              <SlidingToggle
+                options={[
+                  { id: 'market', label: 'Market' },
+                  { id: 'limit', label: 'Limit' },
+                ]}
+                value={mode}
+                onChange={setMode}
+                layoutId="toggle-trade-mode"
+                className="w-full"
+              />
 
-          <div className={well}>
-            <div className="mb-1 text-xs text-text-lo">You receive</div>
-            <div className="flex items-center justify-between gap-3">
-              <input className={inputCls} placeholder="0.0" inputMode="decimal" />
-              <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                title="Pick a token to receive"
-                className="flex items-center gap-1.5 rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600 transition hover:ring-forge-400"
-              >
-                <span>{recv.sym}</span>
-                <span
-                  className={`rounded-pill px-1.5 py-px font-micro text-[8px] uppercase tracking-wide ${
-                    recvIsRune ? 'bg-violet-500/15 text-violet-300' : 'bg-forge-500/15 text-forge-300'
-                  }`}
+              <div className={well}>
+                <div className="mb-1 text-xs text-text-lo">You pay</div>
+                <div className="flex items-center justify-between gap-3">
+                  <input value={amt} onChange={(e) => setAmt(e.target.value)} className={inputCls} placeholder="0.0" inputMode="decimal" />
+                  {dir === 'in' ? bellsPill : tokenPill}
+                </div>
+              </div>
+
+              {mode === 'limit' && (
+                <div className={well}>
+                  <div className="mb-1 text-xs text-text-lo">Limit price ($BELLS)</div>
+                  <input className={`${inputCls} text-base`} placeholder="0.00450" inputMode="decimal" />
+                </div>
+              )}
+
+              <div className="flex justify-center">
+                <motion.button
+                  type="button"
+                  onClick={() => setDir((d) => (d === 'in' ? 'out' : 'in'))}
+                  aria-label="Flip direction"
+                  title="Flip pay / receive"
+                  animate={reduce ? undefined : { rotate: dir === 'in' ? 0 : 180 }}
+                  whileTap={reduce ? undefined : { scale: 0.9 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-700 text-forge-400 ring-1 ring-ink-600 transition hover:text-forge-300 hover:ring-forge-400"
                 >
-                  {recvIsRune ? 'Rune' : 'OP_CAT'}
-                </span>
-                <span className="text-text-lo">▾</span>
-              </button>
-            </div>
-          </div>
+                  ↓
+                </motion.button>
+              </div>
 
-          <RouteSelector amountIn={Number(amt) || 0} />
+              <div className={well}>
+                <div className="mb-1 text-xs text-text-lo">You receive</div>
+                <div className="flex items-center justify-between gap-3">
+                  <input className={inputCls} placeholder="0.0" inputMode="decimal" />
+                  {dir === 'in' ? tokenPill : bellsPill}
+                </div>
+              </div>
 
-          {recvIsRune ? (
-            <>
-              <button
-                type="button"
-                onClick={scrollToRuneSwaps}
-                className="w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-3 text-sm font-semibold text-ink-950 transition hover:brightness-110"
-              >
-                Trade {recv.sym} via P2P ↓
-              </button>
-              <p className="text-center text-xs text-text-lo">
-                {recv.sym} is a Rune — it trades today through signed P2P atomic swaps (no AMM, no custody). Create or take an offer in
-                <span className="text-text-mid"> Rune swaps</span> below.
-              </p>
-            </>
-          ) : (
-            <>
+              <RouteSelector amountIn={Number(amt) || 0} />
+
               <ForgeButton disabled idleLabel={`${mode === 'market' ? 'Swap' : 'Place order'} — opens at mainnet`} />
               <p className="text-center text-xs text-text-lo">
                 Orders are peer-to-peer signed PSBTs — no custody, no AMM. The book needs no new opcodes, so it
                 ships the day {recv.sym} is live.
               </p>
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {pickerOpen && (
         <TokenPicker
@@ -264,13 +245,10 @@ export function Trade() {
           }}
         />
       )}
-
-      <RuneOffers />
     </>
   )
 }
 
-const RUNE_NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOOK•IN•BELLS' }
 const short = (a: string) => (a.length > 16 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a)
 function ago(sec: number) {
   const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
@@ -289,15 +267,20 @@ type SellState = {
   msg?: string
 }
 
-/** Live rune-swap offers from the relay + a browser TAKE flow. The buyer only ever
-    signs their own plain-$BELLS funding input (no rune of theirs is spent → no burn);
-    the seller's rune is already committed by their SINGLE|ACP signature. */
-function RuneOffers() {
+type SweepRun = { total: number; done: number; phase: 'running' | 'done'; results: { id: string; price: number; txid?: string; error?: string }[] }
+const pricePerUnit = (o: Offer) => o.price / Math.max(1, Number(o.amount_hint || '0'))
+
+/** The rune trading surface for ONE rune: chart + live sell orders (cheapest-first) +
+    a Magic-Eden-style budget SWEEP (fill cheapest offers up to a budget) + create-offer.
+    Shown only when a Rune is the selected token; OP_CAT keeps the illustrative book. */
+function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   const { address } = useWallet()
   const [state, setState] = useState<'loading' | 'unconfigured' | 'error' | 'ok'>('loading')
   const [offers, setOffers] = useState<Offer[]>([])
   const [take, setTake] = useState<TakeState | null>(null)
   const [sell, setSell] = useState<SellState | null>(null)
+  const [budget, setBudget] = useState('')
+  const [sweepRun, setSweepRun] = useState<SweepRun | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -315,6 +298,48 @@ function RuneOffers() {
     }
   }, [])
 
+  // this rune's live offers, cheapest (per-unit) first
+  const runeOffers = useMemo(
+    () => offers.filter((o) => o.rune_id === rune.runeId).sort((a, b) => pricePerUnit(a) - pricePerUnit(b)),
+    [offers, rune.runeId],
+  )
+
+  // SWEEP: greedily fill the cheapest offers whose cumulative cost fits the budget
+  const sweep = useMemo(() => {
+    const b = Math.floor(Number(budget) || 0)
+    const picked: Offer[] = []
+    let spent = 0
+    let units = 0n
+    for (const o of runeOffers) {
+      if (spent + o.price > b) continue
+      picked.push(o)
+      spent += o.price
+      units += BigInt(o.amount_hint || '0')
+    }
+    const pickedIds = new Set(picked.map((o) => o.id))
+    return { picked, pickedIds, spent, units }
+  }, [runeOffers, budget])
+
+  /** One full take: build → wallet-sign → finalize+broadcast → mark taken. Returns txid/error. */
+  async function takeOne(offer: Offer): Promise<{ txid: string } | { error: string }> {
+    if (!address) return { error: 'Connect your Bells wallet first.' }
+    const r = await buildTake(offer, address)
+    if ('error' in r) return { error: r.error }
+    const p = r
+    const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
+    if (!nin?.signPsbt) return { error: 'Wallet signPsbt unavailable.' }
+    // P2WPKH funding → SIGHASH_ALL (1); taproot keyspend → SIGHASH_DEFAULT (omit whitelist).
+    const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
+    const signed = await nin.signPsbt(p.psbtB64, { autoFinalized: false, toSignInputs: [toSign] }) // base64 in
+    const s = signed as Record<string, string>
+    const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
+    if (!signedStr) return { error: 'Wallet returned no signed PSBT.' }
+    const res = await finalizeAndBroadcast(signedStr, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
+    if ('error' in res) return res
+    if (RELAY) fetch(`${RELAY}/offers/${offer.id}/taken`, { method: 'POST' }).catch(() => {})
+    return { txid: res.txid }
+  }
+
   async function startTake(offer: Offer) {
     if (!address) {
       setTake({ offer, phase: 'error', msg: 'Connect your Bells wallet first (top right).' })
@@ -328,32 +353,41 @@ function RuneOffers() {
 
   async function confirmTake() {
     if (!take?.plan || !address) return
-    const p = take.plan
     setTake({ ...take, phase: 'signing' })
-    try {
-      const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
-      if (!nin?.signPsbt) throw new Error('Wallet signPsbt unavailable.')
-      // P2WPKH funding → SIGHASH_ALL (1). Taproot keyspend → SIGHASH_DEFAULT (omit the
-      // whitelist so the wallet uses 0x00; DEFAULT still commits to every output).
-      const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
-      // Nintondo signPsbt expects a BASE64 psbt (hex → "Invalid Magic Number").
-      const signed = await nin.signPsbt(p.psbtB64, { autoFinalized: false, toSignInputs: [toSign] })
-      // The wallet may return a bare string (base64/hex PSBT or raw tx) or an object;
-      // finalizeAndBroadcast's toFinalTxHex normalizes all of those.
-      const s = signed as Record<string, string>
-      const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
-      if (!signedStr) throw new Error('Wallet returned no signed PSBT.')
-      const res = await finalizeAndBroadcast(signedStr, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
-      if ('error' in res) {
-        setTake({ ...take, phase: 'error', msg: res.error })
-        return
-      }
-      if (RELAY) fetch(`${RELAY}/offers/${take.offer.id}/taken`, { method: 'POST' }).catch(() => {})
-      setOffers((os) => os.filter((o) => o.id !== take.offer.id))
-      setTake({ ...take, phase: 'done', txid: res.txid })
-    } catch (e) {
-      setTake({ ...take, phase: 'error', msg: String((e as Error)?.message || e) })
+    const res = await takeOne(take.offer)
+    if ('error' in res) {
+      setTake({ ...take, phase: 'error', msg: res.error })
+      return
     }
+    setOffers((os) => os.filter((o) => o.id !== take.offer.id))
+    setTake({ ...take, phase: 'done', txid: res.txid })
+  }
+
+  /** Sweep: take the budget-selected offers cheapest-first, SEQUENTIALLY — each is its own
+      tx + wallet signature, reusing the audited single-offer buildTake. Batching all offers
+      into ONE tx is possible (Magic-Eden msigner style) but needs a different index-mirrored
+      builder: seller_k input @ index k ↔ payment @ index k, then a single runestone edicting
+      the SUMMED amount + a combined anti-burn guard + re-validating every seller 0x83 sig.
+      That's a separate audited path; sequential is the safe v1. Stops on the first failure
+      (rejected signature / broadcast) → a clean partial fill. */
+  async function startSweep() {
+    if (!address) {
+      setSweepRun({ total: 0, done: 0, phase: 'done', results: [{ id: '-', price: 0, error: 'Connect your Bells wallet first.' }] })
+      return
+    }
+    const picked = sweep.picked
+    if (!picked.length) return
+    const results: SweepRun['results'] = []
+    setSweepRun({ total: picked.length, done: 0, phase: 'running', results })
+    for (const o of picked) {
+      const res = await takeOne(o)
+      const row = 'txid' in res ? { id: o.id, price: o.price, txid: res.txid } : { id: o.id, price: o.price, error: res.error }
+      results.push(row)
+      setSweepRun({ total: picked.length, done: results.length, phase: 'running', results: [...results] })
+      if ('txid' in res) setOffers((os) => os.filter((x) => x.id !== o.id))
+      else break // partial fill on the first error (user rejected / broadcast failed)
+    }
+    setSweepRun((r) => (r ? { ...r, phase: 'done' } : r))
   }
 
   // ── SELLER: create a SINGLE|ACP offer (signing never broadcasts — no burn risk) ──
@@ -409,79 +443,128 @@ function RuneOffers() {
   }
 
   const note = (msg: string) => <div className="rounded-btn border border-dashed border-ink-600 p-6 text-center text-sm text-text-mid">{msg}</div>
+  const totalUnits = runeOffers.reduce((s, o) => s + BigInt(o.amount_hint || '0'), 0n)
   return (
-    <div id="rune-swaps" className="mt-6 scroll-mt-20 rounded-card border border-ink-600 bg-ink-800/60 p-5">
-      <div className="mb-1 flex items-center justify-between">
-        <h3 className="font-display text-text-hi">Rune swaps · P2P</h3>
-        <div className="flex items-center gap-3">
-          <span className="font-micro text-[10px] uppercase tracking-wide text-text-lo">{state === 'ok' ? `${offers.length} live` : state}</span>
+    <>
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        {/* LEFT — chart + live sell orders for this rune (cheapest first) */}
+        <div className="space-y-6">
+          <Chart sym={rune.sym} />
+
+          <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="font-display text-text-hi">Sell orders · {rune.sym}</h3>
+              <span className="font-micro text-[10px] uppercase tracking-wide text-text-lo">{state === 'ok' ? `${runeOffers.length} live` : state}</span>
+            </div>
+            <p className="mb-3 text-xs text-text-lo">
+              Real atomic swaps: each seller signs a SIGHASH_SINGLE|ANYONECANPAY offer; you complete it. Your wallet signs{' '}
+              <span className="text-text-mid">only your $BELLS funding input</span> — never a rune UTXO. Cheapest first.
+            </p>
+            {state === 'unconfigured'
+              ? note('Offer relay not configured yet.')
+              : state === 'error'
+                ? note('Relay unreachable right now.')
+                : state === 'loading'
+                  ? note('Loading offers…')
+                  : runeOffers.length === 0
+                    ? note(`No live ${rune.sym} offers yet. Be the first — “Sell ${rune.sym}” →`)
+                    : (
+                      <div className="overflow-hidden rounded-btn border border-ink-600">
+                        <table className="w-full text-sm">
+                          <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
+                            <tr>
+                              <th className="px-4 py-2 font-medium">Price</th>
+                              <th className="px-4 py-2 font-medium">Units</th>
+                              <th className="px-4 py-2 font-medium">Seller</th>
+                              <th className="px-4 py-2 font-medium">Age</th>
+                              <th className="px-4 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-ink-600">
+                            {runeOffers.map((o) => {
+                              const inSweep = sweep.pickedIds.has(o.id)
+                              return (
+                                <tr key={o.id} className={inSweep ? 'bg-forge-500/[0.07]' : ''}>
+                                  <td className="px-4 py-3 font-mono text-text-hi">
+                                    {o.price.toLocaleString()} <span className="text-[10px] text-text-lo">sats</span>
+                                    {inSweep && <span className="ml-1.5 font-micro text-[8px] uppercase tracking-wide text-forge-300">in sweep</span>}
+                                  </td>
+                                  <td className="px-4 py-3 font-mono text-text-mid">{o.amount_hint ? `~${o.amount_hint}` : '—'}</td>
+                                  <td className="px-4 py-3">
+                                    <a href={`${EXPLORER}/address/${o.seller_addr}`} target="_blank" rel="noopener noreferrer" className="font-mono text-text-lo transition hover:text-forge-400">
+                                      {short(o.seller_addr)}
+                                    </a>
+                                  </td>
+                                  <td className="px-4 py-3 text-text-lo">{ago(o.created_at)}</td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => startTake(o)}
+                                      title={address ? 'Buy this offer — your wallet signs only your $BELLS funding input.' : 'Connect your wallet to take an offer.'}
+                                      className="rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:brightness-110"
+                                    >
+                                      Take
+                                    </button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+          </div>
+        </div>
+
+        {/* RIGHT — Magic-Eden-style budget sweep + create-offer */}
+        <div className="h-fit space-y-4 rounded-card border border-ink-600 bg-ink-800/60 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-text-hi">Buy {rune.sym}</h3>
+            {pill}
+          </div>
+
+          <div className={well}>
+            <div className="mb-1 flex items-center justify-between text-xs text-text-lo">
+              <span>Budget</span>
+              <span className="font-mono">{state === 'ok' ? `${runeOffers.length} offers · ~${totalUnits.toString()} ${rune.sym}` : ''}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <input value={budget} onChange={(e) => setBudget(e.target.value)} className={inputCls} placeholder="0" inputMode="numeric" />
+              <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">sats</span>
+            </div>
+          </div>
+
+          <div className="rounded-btn border border-ink-600 bg-ink-900 p-3 text-sm">
+            <div className="flex justify-between"><span className="text-text-lo">Fills</span><span className="font-mono text-text-hi">{sweep.picked.length} offer{sweep.picked.length === 1 ? '' : 's'}</span></div>
+            <div className="mt-1 flex justify-between"><span className="text-text-lo">You receive</span><span className="font-mono text-text-hi">~{sweep.units.toString()} {rune.sym}</span></div>
+            <div className="mt-1 flex justify-between"><span className="text-text-lo">You pay</span><span className="font-mono text-text-mid">{sweep.spent.toLocaleString()} sats</span></div>
+          </div>
+
           <button
             type="button"
-            onClick={openSell}
-            title={address ? 'List one of your runes for sale (SINGLE|ACP offer — signing never broadcasts).' : 'Connect your wallet to sell a rune.'}
-            className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-forge-400 hover:text-forge-400"
+            onClick={startSweep}
+            disabled={!sweep.picked.length}
+            className="w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-3 text-sm font-semibold text-ink-950 transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Sell a rune
+            {sweep.picked.length ? `Sweep ${sweep.picked.length} cheapest` : 'Set a budget to sweep'}
           </button>
+          <p className="text-center text-[11px] leading-relaxed text-text-lo">
+            Fills the cheapest offers up to your budget. Each is its own atomic swap — your wallet signs once per offer ({sweep.picked.length || 'N'} signature{sweep.picked.length === 1 ? '' : 's'}). Stops cleanly if you reject one.
+          </p>
+
+          <div className="border-t border-ink-600 pt-4">
+            <button
+              type="button"
+              onClick={openSell}
+              title={address ? 'List one of your runes (SINGLE|ACP — signing never broadcasts).' : 'Connect your wallet to sell.'}
+              className="w-full rounded-btn border border-ink-600 px-4 py-2.5 text-sm font-medium text-text-hi transition hover:border-forge-400 hover:text-forge-400"
+            >
+              Sell {rune.sym}
+            </button>
+            <p className="mt-2 text-center text-[11px] text-text-lo">Signing an offer never broadcasts — your rune only moves when a buyer takes it.</p>
+          </div>
         </div>
       </div>
-      <p className="mb-4 text-xs text-text-lo">
-        Real atomic swaps: a seller signs a SIGHASH_SINGLE|ANYONECANPAY offer, a buyer completes it. No custody, no AMM, no new opcodes — proven on-chain.
-      </p>
-      {state === 'unconfigured'
-        ? note('Offer relay not configured yet — it lights up once the Worker is deployed.')
-        : state === 'error'
-          ? note('Relay unreachable right now.')
-          : state === 'loading'
-            ? note('Loading offers…')
-            : offers.length === 0
-              ? note('No live rune offers. Create one with the rune-swap tooling.')
-              : (
-                <div className="overflow-hidden rounded-btn border border-ink-600">
-                  <table className="w-full text-sm">
-                    <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
-                      <tr>
-                        <th className="px-4 py-2 font-medium">Rune</th>
-                        <th className="px-4 py-2 font-medium">Price</th>
-                        <th className="px-4 py-2 font-medium">Seller</th>
-                        <th className="px-4 py-2 font-medium">Age</th>
-                        <th className="px-4 py-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-ink-600">
-                      {offers.map((o) => (
-                        <tr key={o.id}>
-                          <td className="px-4 py-3">
-                            <span className="font-mono text-text-hi">{RUNE_NAMES[o.rune_id] ?? o.rune_id}</span>
-                            {o.amount_hint && <span className="block text-[10px] text-text-lo">~{o.amount_hint} units</span>}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-text-mid">{o.price.toLocaleString()} sats</td>
-                          <td className="px-4 py-3">
-                            <a href={`${EXPLORER}/address/${o.seller_addr}`} target="_blank" rel="noopener noreferrer" className="font-mono text-text-lo transition hover:text-forge-400">
-                              {short(o.seller_addr)}
-                            </a>
-                          </td>
-                          <td className="px-4 py-3 text-text-lo">{ago(o.created_at)}</td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => startTake(o)}
-                              title={address ? 'Buy this rune — your wallet signs only your $BELLS funding input.' : 'Connect your wallet to take an offer.'}
-                              className="rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:brightness-110"
-                            >
-                              Take
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-      <p className="mt-3 text-[11px] leading-relaxed text-text-lo">
-        Buyers take offers right here — your wallet signs <span className="text-text-mid">only your $BELLS funding input</span>, never a rune UTXO. Creating an
-        offer (the seller side) runs through the operator <span className="font-mono">rune-swap</span> tooling for now.
-      </p>
 
       {take && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => take.phase !== 'signing' && setTake(null)}>
@@ -596,6 +679,37 @@ function RuneOffers() {
           </div>
         </div>
       )}
-    </div>
+
+      {sweepRun && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => sweepRun.phase === 'done' && setSweepRun(null)}>
+          <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
+            <h4 className="font-display text-lg text-text-hi">Sweep {rune.sym}</h4>
+            <p className="mt-2 text-sm text-text-mid">
+              {sweepRun.phase === 'running'
+                ? `Taking offer ${sweepRun.done + 1} of ${sweepRun.total} — sign each in your wallet…`
+                : `Done — ${sweepRun.results.filter((r) => r.txid).length} of ${sweepRun.total} filled.`}
+            </p>
+            <div className="mt-4 max-h-60 space-y-2 overflow-y-auto">
+              {sweepRun.results.map((r, i) => (
+                <div key={r.id + i} className="flex items-center justify-between rounded-btn border border-ink-600 bg-ink-900 px-3 py-2 text-xs">
+                  <span className="text-text-lo">{r.price.toLocaleString()} sats</span>
+                  {r.txid ? (
+                    <a href={`${EXPLORER}/tx/${r.txid}`} target="_blank" rel="noopener noreferrer" className="font-mono text-emerald-300 hover:underline">✓ {r.txid.slice(0, 10)}…</a>
+                  ) : (
+                    <span className="max-w-[60%] truncate text-right text-red-300" title={r.error}>✕ {r.error}</span>
+                  )}
+                </div>
+              ))}
+              {sweepRun.phase === 'running' && sweepRun.results.length < sweepRun.total && (
+                <div className="rounded-btn border border-dashed border-ink-600 px-3 py-2 text-center text-xs text-text-lo">signing…</div>
+              )}
+            </div>
+            {sweepRun.phase === 'done' && (
+              <button type="button" onClick={() => setSweepRun(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
