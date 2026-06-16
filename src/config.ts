@@ -9,7 +9,7 @@ export const GITHUB_URL = 'https://github.com/Ceyz/bellforge'
 /** Rune-swap offer relay (Cloudflare Worker). Empty ⇒ not configured yet → the
     Trade page shows a "relay offline" note instead of live offers. Set this to the
     deployed `bellforge-offers.<sub>.workers.dev` URL (no trailing slash). */
-export const RELAY = ''
+export const RELAY = 'https://bellforge-offers.ceyzcrypto.workers.dev'
 
 /** Bellscoin block explorer (Nintondo). */
 export const EXPLORER = 'https://nintondo.io/bells/explorer'
