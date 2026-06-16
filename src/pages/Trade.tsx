@@ -5,7 +5,9 @@ import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
 import { fetchOffers, type Offer } from '../lib/offers'
-import { EXPLORER } from '../config'
+import { buildTake, finalizeAndBroadcast, type TakePlan } from '../lib/runeSwap'
+import { useWallet } from '../wallet/WalletProvider'
+import { EXPLORER, RELAY } from '../config'
 
 /* Illustrative book — clearly labelled a preview. No real market exists pre-mainnet. */
 const ASKS = [
@@ -213,12 +215,17 @@ function ago(sec: number) {
   return `${Math.floor(d / 86400)}d`
 }
 
-/** Live rune-swap offers from the relay. Real atomic swaps (SINGLE|ACP) — unlike the
-    illustrative $BOUND book above. Read-only for now: creating/taking runs through the
-    operator rune-swap tooling until a wallet flow is validated. */
+type TakeState = { offer: Offer; plan?: TakePlan; phase: 'building' | 'confirm' | 'signing' | 'done' | 'error'; msg?: string; txid?: string }
+
+/** Live rune-swap offers from the relay + a browser TAKE flow. The buyer only ever
+    signs their own plain-$BELLS funding input (no rune of theirs is spent → no burn);
+    the seller's rune is already committed by their SINGLE|ACP signature. */
 function RuneOffers() {
+  const { address } = useWallet()
   const [state, setState] = useState<'loading' | 'unconfigured' | 'error' | 'ok'>('loading')
   const [offers, setOffers] = useState<Offer[]>([])
+  const [take, setTake] = useState<TakeState | null>(null)
+
   useEffect(() => {
     let alive = true
     fetchOffers().then((r) => {
@@ -234,6 +241,41 @@ function RuneOffers() {
       alive = false
     }
   }, [])
+
+  async function startTake(offer: Offer) {
+    if (!address) {
+      setTake({ offer, phase: 'error', msg: 'Connect your Bells wallet first (top right).' })
+      return
+    }
+    setTake({ offer, phase: 'building' })
+    const r = await buildTake(offer, address)
+    if ('error' in r) setTake({ offer, phase: 'error', msg: r.error })
+    else setTake({ offer, plan: r, phase: 'confirm' })
+  }
+
+  async function confirmTake() {
+    if (!take?.plan || !address) return
+    const p = take.plan
+    setTake({ ...take, phase: 'signing' })
+    try {
+      const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
+      if (!nin?.signPsbt) throw new Error('Wallet signPsbt unavailable.')
+      const signed = await nin.signPsbt(p.psbtHex, { autoFinalized: false, toSignInputs: [{ index: p.buyerInputIndex, address, sighashTypes: [1] }] })
+      const signedHex = typeof signed === 'string' ? signed : ((signed as Record<string, string>)?.psbtHex ?? (signed as Record<string, string>)?.hex ?? '')
+      if (!signedHex) throw new Error('Wallet returned no signed PSBT.')
+      const res = await finalizeAndBroadcast(signedHex, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
+      if ('error' in res) {
+        setTake({ ...take, phase: 'error', msg: res.error })
+        return
+      }
+      if (RELAY) fetch(`${RELAY}/offers/${take.offer.id}/taken`, { method: 'POST' }).catch(() => {})
+      setOffers((os) => os.filter((o) => o.id !== take.offer.id))
+      setTake({ ...take, phase: 'done', txid: res.txid })
+    } catch (e) {
+      setTake({ ...take, phase: 'error', msg: String((e as Error)?.message || e) })
+    }
+  }
+
   const note = (msg: string) => <div className="rounded-btn border border-dashed border-ink-600 p-6 text-center text-sm text-text-mid">{msg}</div>
   return (
     <div className="mt-6 rounded-card border border-ink-600 bg-ink-800/60 p-5">
@@ -281,9 +323,9 @@ function RuneOffers() {
                           <td className="px-4 py-3 text-right">
                             <button
                               type="button"
-                              disabled
-                              title="Taking runs through the rune-swap tooling for now; a wallet flow lands after the safety validation."
-                              className="cursor-not-allowed rounded-btn bg-ink-700 px-3 py-1.5 text-xs font-medium text-text-lo"
+                              onClick={() => startTake(o)}
+                              title={address ? 'Buy this rune — your wallet signs only your $BELLS funding input.' : 'Connect your wallet to take an offer.'}
+                              className="rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:brightness-110"
                             >
                               Take
                             </button>
@@ -295,9 +337,50 @@ function RuneOffers() {
                 </div>
               )}
       <p className="mt-3 text-[11px] leading-relaxed text-text-lo">
-        Creating + taking currently runs through the operator <span className="font-mono">rune-swap</span> tooling (already proven on-chain). A wallet
-        flow lands after we validate the Nintondo wallet signs SINGLE|ACP safely on a rune UTXO.
+        Buyers take offers right here — your wallet signs <span className="text-text-mid">only your $BELLS funding input</span>, never a rune UTXO. Creating an
+        offer (the seller side) runs through the operator <span className="font-mono">rune-swap</span> tooling for now.
       </p>
+
+      {take && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => take.phase !== 'signing' && setTake(null)}>
+          <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
+            <h4 className="font-display text-lg text-text-hi">Take rune offer</h4>
+            {take.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Tracing the rune + preparing your transaction…</p>}
+            {take.phase === 'error' && (
+              <>
+                <p className="mt-4 text-sm text-red-300">{take.msg}</p>
+                <button type="button" onClick={() => setTake(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+            {take.phase === 'signing' && <p className="mt-4 text-sm text-text-mid">Sign in your wallet, then we verify + broadcast…</p>}
+            {take.phase === 'done' && (
+              <>
+                <p className="mt-4 text-sm text-emerald-300">Swap broadcast ✓ — the rune is yours.</p>
+                <a href={`${EXPLORER}/tx/${take.txid}`} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all font-mono text-xs text-forge-400 hover:underline">{take.txid}</a>
+                <button type="button" onClick={() => setTake(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+            {take.phase === 'confirm' && take.plan && (
+              <>
+                <dl className="mt-4 space-y-1.5 text-sm">
+                  <div className="flex justify-between"><dt className="text-text-lo">You receive</dt><dd className="font-mono text-text-hi">{take.plan.amount.toString()} {take.plan.runeName}</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">You pay</dt><dd className="font-mono text-text-hi">{take.plan.price.toLocaleString()} sats</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">Network fee</dt><dd className="font-mono text-text-mid">{take.plan.fee.toLocaleString()} sats</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">To seller</dt><dd className="font-mono text-text-mid">{short(take.plan.sellerAddr)}</dd></div>
+                </dl>
+                <p className="mt-3 rounded-btn bg-ink-800 p-3 text-[11px] leading-relaxed text-text-lo">
+                  Your wallet signs <span className="text-text-mid">only your $BELLS funding input</span>. We re-traced the rune (it really holds{' '}
+                  {take.plan.amount.toString()} {take.plan.runeName}) and the anti-burn guard verified the rune lands on you before broadcast.
+                </p>
+                <div className="mt-5 flex gap-3">
+                  <button type="button" onClick={() => setTake(null)} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Cancel</button>
+                  <button type="button" onClick={confirmTake} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign & broadcast</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
