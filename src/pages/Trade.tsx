@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
@@ -250,6 +250,15 @@ export function Trade() {
 }
 
 const short = (a: string) => (a.length > 16 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a)
+/** A readable message from a thrown wallet error. Nintondo rejects with a {code,message}
+    OBJECT (String(e) → "[object Object]"), and a user-cancel shows up as code 4001 /
+    "reject"/"cancel"/"denied". */
+function walletErr(e: unknown): string {
+  const o = e as { code?: number; message?: string }
+  const msg = o?.message ?? (typeof e === 'string' ? e : '')
+  if (o?.code === 4001 || /reject|cancel|denied|declin/i.test(msg)) return 'Signature cancelled.'
+  return msg || 'Wallet error.'
+}
 function ago(sec: number) {
   const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
   if (d < 60) return `${d}s`
@@ -281,6 +290,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   const [sell, setSell] = useState<SellState | null>(null)
   const [budget, setBudget] = useState('')
   const [sweepRun, setSweepRun] = useState<SweepRun | null>(null)
+  const sweepCancelled = useRef(false)
 
   useEffect(() => {
     let alive = true
@@ -320,24 +330,30 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
     return { picked, pickedIds, spent, units }
   }, [runeOffers, budget])
 
-  /** One full take: build → wallet-sign → finalize+broadcast → mark taken. Returns txid/error. */
+  /** One full take: build → wallet-sign → finalize+broadcast → mark taken. NEVER throws —
+      a wallet rejection (Nintondo rejects with a {code,message} object) is caught and
+      returned as { error } so the modal can always recover (no stuck "signing…" popup). */
   async function takeOne(offer: Offer): Promise<{ txid: string } | { error: string }> {
     if (!address) return { error: 'Connect your Bells wallet first.' }
-    const r = await buildTake(offer, address)
-    if ('error' in r) return { error: r.error }
-    const p = r
-    const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
-    if (!nin?.signPsbt) return { error: 'Wallet signPsbt unavailable.' }
-    // P2WPKH funding → SIGHASH_ALL (1); taproot keyspend → SIGHASH_DEFAULT (omit whitelist).
-    const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
-    const signed = await nin.signPsbt(p.psbtB64, { autoFinalized: false, toSignInputs: [toSign] }) // base64 in
-    const s = signed as Record<string, string>
-    const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
-    if (!signedStr) return { error: 'Wallet returned no signed PSBT.' }
-    const res = await finalizeAndBroadcast(signedStr, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
-    if ('error' in res) return res
-    if (RELAY) fetch(`${RELAY}/offers/${offer.id}/taken`, { method: 'POST' }).catch(() => {})
-    return { txid: res.txid }
+    try {
+      const r = await buildTake(offer, address)
+      if ('error' in r) return { error: r.error }
+      const p = r
+      const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
+      if (!nin?.signPsbt) return { error: 'Wallet signPsbt unavailable.' }
+      // P2WPKH funding → SIGHASH_ALL (1); taproot keyspend → SIGHASH_DEFAULT (omit whitelist).
+      const toSign = p.taproot ? { index: p.buyerInputIndex, address } : { index: p.buyerInputIndex, address, sighashTypes: [1] }
+      const signed = await nin.signPsbt(p.psbtB64, { autoFinalized: false, toSignInputs: [toSign] }) // base64 in
+      const s = signed as Record<string, string>
+      const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
+      if (!signedStr) return { error: 'Wallet returned no signed PSBT.' }
+      const res = await finalizeAndBroadcast(signedStr, { runeId: p.runeId, amount: p.amount, runeTxid: p.runeTxid, runeVout: p.runeVout })
+      if ('error' in res) return res
+      if (RELAY) fetch(`${RELAY}/offers/${offer.id}/taken`, { method: 'POST' }).catch(() => {})
+      return { txid: res.txid }
+    } catch (e) {
+      return { error: walletErr(e) }
+    }
   }
 
   async function startTake(offer: Offer) {
@@ -377,17 +393,20 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
     }
     const picked = sweep.picked
     if (!picked.length) return
+    sweepCancelled.current = false
     const results: SweepRun['results'] = []
     setSweepRun({ total: picked.length, done: 0, phase: 'running', results })
     for (const o of picked) {
-      const res = await takeOne(o)
+      if (sweepCancelled.current) return // user closed the modal mid-sweep → stop, leave it dismissed
+      const res = await takeOne(o) // never throws
+      if (sweepCancelled.current) return
       const row = 'txid' in res ? { id: o.id, price: o.price, txid: res.txid } : { id: o.id, price: o.price, error: res.error }
       results.push(row)
       setSweepRun({ total: picked.length, done: results.length, phase: 'running', results: [...results] })
       if ('txid' in res) setOffers((os) => os.filter((x) => x.id !== o.id))
       else break // partial fill on the first error (user rejected / broadcast failed)
     }
-    setSweepRun((r) => (r ? { ...r, phase: 'done' } : r))
+    if (!sweepCancelled.current) setSweepRun((r) => (r ? { ...r, phase: 'done' } : r))
   }
 
   // ── SELLER: create a SINGLE|ACP offer (signing never broadcasts — no burn risk) ──
@@ -577,7 +596,12 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                 <button type="button" onClick={() => setTake(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
               </>
             )}
-            {take.phase === 'signing' && <p className="mt-4 text-sm text-text-mid">Sign in your wallet, then we verify + broadcast…</p>}
+            {take.phase === 'signing' && (
+              <>
+                <p className="mt-4 text-sm text-text-mid">Sign in your wallet, then we verify + broadcast…</p>
+                <button type="button" onClick={() => setTake(null)} className="mt-4 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-lo">Close</button>
+              </>
+            )}
             {take.phase === 'done' && (
               <>
                 <p className="mt-4 text-sm text-emerald-300">Swap broadcast ✓ — the rune is yours.</p>
@@ -613,7 +637,12 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
             <h4 className="font-display text-lg text-text-hi">Sell a rune</h4>
             {sell.phase === 'scanning' && <p className="mt-4 text-sm text-text-mid">Scanning your wallet for rune UTXOs…</p>}
             {sell.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Building your SINGLE|ACP offer…</p>}
-            {sell.phase === 'signing' && <p className="mt-4 text-sm text-text-mid">Sign in your wallet — this does <span className="text-text-mid">not</span> broadcast, it only creates the offer…</p>}
+            {sell.phase === 'signing' && (
+              <>
+                <p className="mt-4 text-sm text-text-mid">Sign in your wallet — this does <span className="text-text-mid">not</span> broadcast, it only creates the offer…</p>
+                <button type="button" onClick={() => setSell(null)} className="mt-4 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-lo">Close</button>
+              </>
+            )}
             {sell.phase === 'error' && (
               <>
                 <p className="mt-4 text-sm text-red-300">{sell.msg}</p>
@@ -704,7 +733,18 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                 <div className="rounded-btn border border-dashed border-ink-600 px-3 py-2 text-center text-xs text-text-lo">signing…</div>
               )}
             </div>
-            {sweepRun.phase === 'done' && (
+            {sweepRun.phase === 'running' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  sweepCancelled.current = true
+                  setSweepRun(null)
+                }}
+                className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi"
+              >
+                Stop sweep
+              </button>
+            ) : (
               <button type="button" onClick={() => setSweepRun(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
             )}
           </div>
