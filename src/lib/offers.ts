@@ -16,6 +16,22 @@ export type Offer = {
 
 export type OffersResult = { offers: Offer[] } | { error: true } | { unconfigured: true }
 
+/** A settled trade (a taken offer) — the real fill history behind a rune's price. */
+export type Fill = { rune_id: string; amount_hint?: string | null; price: number; seller_addr: string; created_at: number }
+export type FillsResult = { fills: Fill[] } | { error: true } | { unconfigured: true }
+
+export async function fetchFills(rune?: string): Promise<FillsResult> {
+  if (!RELAY) return { unconfigured: true }
+  try {
+    const res = await fetch(`${RELAY}/fills${rune ? `?rune=${encodeURIComponent(rune)}` : ''}`)
+    if (!res.ok) return { error: true }
+    const j = (await res.json()) as { fills?: Fill[] }
+    return { fills: j.fills ?? [] }
+  } catch {
+    return { error: true }
+  }
+}
+
 export async function fetchOffers(rune?: string): Promise<OffersResult> {
   if (!RELAY) return { unconfigured: true }
   try {

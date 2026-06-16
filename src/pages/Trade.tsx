@@ -9,6 +9,7 @@ import { buildTake, finalizeAndBroadcast, listRuneUtxos, buildOffer, validateAnd
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
 import { TokenPicker } from '../components/app/TokenPicker'
+import { RuneTradeChart } from '../components/app/RuneTradeChart'
 import { getToken, type TokenInfo } from '../lib/tokens'
 
 /* Illustrative book — clearly labelled a preview. No real market exists pre-mainnet. */
@@ -474,9 +475,10 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* LEFT — live sell orders for this rune (cheapest first). No price chart: runes
-            trade P2P and we have no honest price feed (no fake "illustrative" market here). */}
+        {/* LEFT — REAL price from settled swaps (not illustrative) + live sell orders */}
         <div className="space-y-6">
+          <RuneTradeChart rune={rune} />
+
           <div className="rounded-card border border-ink-600 bg-ink-800/60 p-4">
             <div className="mb-1 flex items-center justify-between">
               <h3 className="font-display text-text-hi">Sell orders · {rune.sym}</h3>
