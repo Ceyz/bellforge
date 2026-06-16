@@ -14,10 +14,13 @@
     "@fontsource-variable/pixelify-sans": "^5.2.7",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/silkscreen": "^5.2.8",
+    "bitcoinjs-lib": "^6.1.7",
+    "buffer": "^6.0.3",
     "motion": "^12.40.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-router-dom": "^7.17.0"
+    "react-router-dom": "^7.17.0",
+    "runelib": "^1.0.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

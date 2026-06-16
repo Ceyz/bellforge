@@ -1,3 +1,4 @@
+import './lib/buffer-polyfill' // MUST be first — runelib/bitcoinjs need a global Buffer
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'

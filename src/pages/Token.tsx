@@ -50,11 +50,13 @@ export function Token() {
             </div>
             <GuaranteesSection token={token} />
           </>
-        ) : (
+        ) : token.type === 'native' ? (
           <>
             <NativeLive />
             <AboutSection token={token} />
           </>
+        ) : (
+          <AboutSection token={token} />
         )}
 
         <HonestFooter token={token} />

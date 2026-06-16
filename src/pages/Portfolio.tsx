@@ -9,6 +9,8 @@ import { LinkButton } from '../components/ui/Button'
 import { EmberDot } from '../components/ui/EmberDot'
 import { OdometerNumber } from '../components/juice/OdometerNumber'
 import { ForgeEmpty } from '../components/juice/ForgeEmpty'
+import { HonestBanner } from '../components/ui/HonestBanner'
+import { fetchRuneBalances, type RuneBalance } from '../lib/runes'
 import { asset, DOCS_URL, explorerAddress, explorerTx } from '../config'
 
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null; txCount: number }
@@ -28,20 +30,26 @@ export function Portfolio() {
   const reduce = useReducedMotion()
   const [bal, setBal] = useState<Bal>({ state: 'idle', bells: null, txCount: 0 })
   const [activity, setActivity] = useState<Activity[]>([])
+  const [runes, setRunes] = useState<{ state: 'idle' | 'loading' | 'error'; rows: RuneBalance[]; capped: boolean }>({ state: 'idle', rows: [], capped: false })
 
   useEffect(() => {
     if (!address) {
       setBal({ state: 'idle', bells: null, txCount: 0 })
       setActivity([])
+      setRunes({ state: 'idle', rows: [], capped: false })
       return
     }
     let alive = true
     setBal({ state: 'loading', bells: null, txCount: 0 })
+    setRunes({ state: 'loading', rows: [], capped: false })
     fetchBellsBalance(address).then((r) => {
       if (alive) setBal('error' in r ? { state: 'error', bells: null, txCount: 0 } : { state: 'idle', bells: r.bells, txCount: r.txCount })
     })
     fetchActivity(address).then((r) => {
       if (alive && !('error' in r)) setActivity(r)
+    })
+    fetchRuneBalances(address).then((r) => {
+      if (alive) setRunes('error' in r ? { state: 'error', rows: [], capped: false } : { state: 'idle', rows: r.rows, capped: r.capped })
     })
     return () => {
       alive = false
@@ -149,6 +157,61 @@ export function Portfolio() {
                 </tbody>
               </table>
             </div>
+          </PageItem>
+
+          <PageItem>
+            <div className="mb-3 flex items-baseline justify-between">
+              <h3 className="font-display text-text-hi">Runes</h3>
+              {runes.state === 'idle' && runes.rows.length > 0 && (
+                <span className="text-xs text-text-lo">{runes.capped ? 'sampled (≥)' : `${runes.rows.length} held`}</span>
+              )}
+            </div>
+            {runes.state === 'loading' ? (
+              <div className="rounded-card border border-ink-600 bg-ink-800/60 p-6 text-center text-sm text-text-mid">Decoding runes from the chain…</div>
+            ) : runes.state === 'error' ? (
+              <div className="rounded-card border border-ink-600 bg-ink-800/60 p-6 text-center text-sm text-text-mid">Couldn’t read rune UTXOs right now.</div>
+            ) : runes.rows.length === 0 ? (
+              <div className="rounded-card border border-ink-600 bg-ink-800/60">
+                <ForgeEmpty icon="mold" title="No runes held" body="Runes you hold on this address appear here, decoded live from the chain." to="/app/token" cta="Explore runes" />
+              </div>
+            ) : (
+              <>
+                <div className="overflow-hidden rounded-card border border-ink-600">
+                  <table className="w-full text-sm">
+                    <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
+                      <tr>
+                        <th className="px-5 py-3 font-medium">Rune</th>
+                        <th className="px-5 py-3 font-medium">Balance</th>
+                        <th className="px-5 py-3 font-medium">Rune ID</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink-600">
+                      {runes.rows.map((r) => (
+                        <tr key={r.id}>
+                          <td className="px-5 py-4">
+                            <a href={explorerAddress(address)} target="_blank" rel="noopener noreferrer" className="font-mono text-text-hi transition hover:text-forge-400">
+                              {r.name}
+                            </a>
+                          </td>
+                          <td className="px-5 py-4 font-mono text-text-mid">
+                            {r.approx ? '≥ ' : ''}
+                            {r.display}
+                          </td>
+                          <td className="px-5 py-4 font-mono text-text-lo">{r.id}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3">
+                  <HonestBanner>
+                    Rune balances are decoded <span className="text-text-hi">live in your browser</span> from electrs UTXOs — no indexer.
+                    {runes.capped ? ' This wallet is large, so the list is sampled — balances are a lower bound (≥).' : ''} Global holders and
+                    total supply per rune need the runes indexer (<span className="font-mono">ord.nintondo.io</span>, offline).
+                  </HonestBanner>
+                </div>
+              </>
+            )}
           </PageItem>
 
           <PageItem>

@@ -1,8 +1,12 @@
-export type Status = 'live-regtest' | 'soon' | 'rnd'
+export type Status = 'live-regtest' | 'live-mainnet' | 'soon' | 'rnd'
 
 const META: Record<Status, { label: string; cls: string }> = {
   'live-regtest': {
     label: 'Live · regtest',
+    cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
+  },
+  'live-mainnet': {
+    label: 'Live · mainnet',
     cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
   },
   soon: { label: 'Soon', cls: 'bg-forge-500/15 text-forge-300 ring-forge-500/30' },

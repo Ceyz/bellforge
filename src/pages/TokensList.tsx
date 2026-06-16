@@ -14,18 +14,20 @@ import { asset } from '../config'
 
 type SortKey = 'newest' | 'holders' | 'minted'
 type Dir = 'asc' | 'desc'
-type Filter = 'all' | 'native' | 'opcat'
+type Filter = 'all' | 'opcat' | 'rune'
 
+/** Two ecosystems for the filter: the OP_CAT/native side vs the Runes side. */
+const family = (t: TokenInfo): 'opcat' | 'rune' => (t.protocol === 'rune' ? 'rune' : 'opcat')
 const mintedPct = (t: TokenInfo) => (t.cap && t.cap > 0 ? ((t.minted ?? 0) / t.cap) * 100 : 0)
-const isOpcat = (t: TokenInfo) => t.type === 'opcat' && !!t.cap
-const holdersText = (t: TokenInfo) => (t.type === 'native' ? '—' : (t.holders ?? 0).toLocaleString())
+const isOpcat = (t: TokenInfo) => t.type === 'opcat' && !!t.cap && t.protocol !== 'rune'
+const holdersText = (t: TokenInfo) => (t.type === 'native' || t.protocol === 'rune' ? '—' : (t.holders ?? 0).toLocaleString())
 const mintedText = (t: TokenInfo) => (isOpcat(t) ? `${mintedPct(t).toFixed(0)}%` : '—')
-const supplyText = (t: TokenInfo) => (t.cap ? `0 / ${t.cap.toLocaleString()}` : '—')
+const supplyText = (t: TokenInfo) => (t.cap && t.protocol !== 'rune' ? `0 / ${t.cap.toLocaleString()}` : '—')
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'native', label: 'Native' },
   { id: 'opcat', label: 'OP_CAT' },
+  { id: 'rune', label: 'Runes' },
 ]
 
 export function TokensList() {
@@ -37,7 +39,7 @@ export function TokensList() {
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    let list = TOKEN_LIST.filter((t) => (filter === 'all' ? true : t.type === filter))
+    let list = TOKEN_LIST.filter((t) => (filter === 'all' ? true : family(t) === filter))
     if (needle) list = list.filter((t) => (t.sym + t.name + t.tag).toLowerCase().includes(needle))
     const base = sort === 'newest' ? [...list].reverse() : [...list]
     if (sort !== 'newest') {
@@ -72,9 +74,10 @@ export function TokensList() {
 
       <PageItem>
         <HonestBanner>
-          Live holder counts and % minted arrive with the P4 deterministic indexer at mainnet. Today every
-          value is <span className="font-mono text-text-hi">0</span> or <span className="font-mono text-text-hi">—</span>, never
-          faked.
+          OP_CAT holder counts and % minted arrive with the P4 indexer at mainnet (today <span className="font-mono text-text-hi">0</span> /{' '}
+          <span className="font-mono text-text-hi">—</span>, never faked). <span className="text-text-hi">Runes</span> are a separate
+          protocol — your own rune balances decode live in the Portfolio, but global holders/supply need the runes indexer
+          (<span className="font-mono">ord.nintondo.io</span>, currently offline) → shown <span className="font-mono text-text-hi">—</span>.
         </HonestBanner>
       </PageItem>
 
@@ -136,8 +139,8 @@ export function TokensList() {
                         {t.sprite ? (
                           <PixelIcon src={asset(t.sprite)} alt="" native={32} />
                         ) : (
-                          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-ink-700 font-mono text-[10px] text-bell-300 ring-1 ring-ink-600">
-                            {t.sym.replace('$', '')}
+                          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md bg-ink-700 font-mono text-[10px] text-bell-300 ring-1 ring-ink-600">
+                            {t.sym.replace(/[$•]/g, '').slice(0, 4)}
                           </span>
                         )}
                         <span>

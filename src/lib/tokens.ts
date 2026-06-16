@@ -1,6 +1,8 @@
 import type { Status } from '../components/ui/StatusPill'
 
 export type TokenType = 'native' | 'opcat'
+/** Which on-chain protocol backs the token. Existing entries default to 'opcat'. */
+export type TokenProtocol = 'opcat' | 'rune'
 
 export type TokenInfo = {
   id: string
@@ -8,6 +10,10 @@ export type TokenInfo = {
   name: string
   tag: string
   type: TokenType
+  /** omit ⇒ 'opcat'. Runes are a separate protocol shown via the explorer filter. */
+  protocol?: TokenProtocol
+  /** "block:idx" for rune-backed entries. */
+  runeId?: string
   status: Status
   sprite?: string
   network: string
@@ -90,6 +96,48 @@ export const TOKENS: Record<string, TokenInfo> = {
       { k: 'Network', v: 'Bellscoin', note: 'Regtest today · mainnet after audit' },
     ],
     guarantees: COVENANT_GUARANTEES,
+  },
+  nintondo: {
+    id: 'nintondo',
+    sym: 'NINTONDO',
+    name: 'Nintondo',
+    tag: 'Rune',
+    type: 'opcat',
+    protocol: 'rune',
+    runeId: '1:0',
+    status: 'live-mainnet',
+    network: 'Bellscoin',
+    origin:
+      'The flagship Bellscoin Rune (RuneId 1:0) — a Runes-protocol token (Casey Rodarmor’s Runes), not an OP_CAT covenant token and not Bellforge’s. It is a reserved rune with no on-chain etch, mintable one unit per transaction.',
+    blurb: 'The flagship Bellscoin Rune (1:0). A Runes-protocol token, mass-minted one unit at a time.',
+    facts: [
+      { k: 'Protocol', v: 'Runes', note: 'Casey Rodarmor’s Runes, on Bellscoin' },
+      { k: 'Rune ID', v: '1:0', note: 'Reserved rune — no on-chain etch' },
+      { k: 'Per mint', v: '1 unit', note: 'One unit minted per transaction' },
+      { k: 'Holders / supply', v: '—', note: 'Need the runes indexer (ord.nintondo.io, offline)' },
+    ],
+    guarantees: [],
+  },
+  nookinbells: {
+    id: 'nookinbells',
+    sym: 'NOOK•IN•BELLS',
+    name: 'Nook in Bells',
+    tag: 'Rune',
+    type: 'opcat',
+    protocol: 'rune',
+    runeId: '350000:1',
+    status: 'live-mainnet',
+    network: 'Bellscoin',
+    origin:
+      'A Bellscoin Rune etched at block 350000 (RuneId 350000:1). A Runes-protocol token with a premine and a capped open mint — not an OP_CAT covenant token.',
+    blurb: 'A Bellscoin Rune (350000:1) — etched with a premine and a capped open mint.',
+    facts: [
+      { k: 'Protocol', v: 'Runes', note: 'Etched on-chain at block 350000' },
+      { k: 'Rune ID', v: '350000:1', note: 'block:tx index of the etch' },
+      { k: 'Mint cap', v: '60,000,000', note: '1,000 units per mint' },
+      { k: 'Premine', v: '4,000,000,000', note: 'Allocated to the etcher at genesis' },
+    ],
+    guarantees: [],
   },
 }
 
