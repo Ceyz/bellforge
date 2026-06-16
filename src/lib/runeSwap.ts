@@ -296,3 +296,136 @@ export async function finalizeAndBroadcast(signed: string, expect: { runeId: str
     return { error: String(e?.message || e) }
   }
 }
+
+// ── SELLER side: create a SINGLE|ACP offer (the wallet signs the rune UTXO) ──────────
+// SIGHASH_SINGLE (0x03) | SIGHASH_ANYONECANPAY (0x80). The seller's signature commits ONLY
+// to input0 (their rune UTXO outpoint+amount+script) + output0 (their payment) — a buyer
+// freely appends their funding input + the runestone edict + recv/change without
+// invalidating it. SIGNING NEVER BROADCASTS: the rune is not spent until a buyer completes
+// AND broadcasts WITH the edict (buildTake's anti-burn guard guarantees conservation), so
+// creating an offer cannot burn the rune. Worst case is a malformed (un-takeable) offer.
+const SINGLE_ACP = 0x83
+
+export type SellerRuneUtxo = { txid: string; vout: number; value: number; runeId: string; runeName: string; amount: bigint }
+
+/** Scan the connected address for single-rune UTXOs the seller could offer (bounded). */
+export async function listRuneUtxos(address: string): Promise<SellerRuneUtxo[] | { error: string }> {
+  try {
+    const lib = await getLib()
+    const trace = await makeTracer(lib)
+    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(address)}/utxo`).then((r) => r.json())
+    const out: SellerRuneUtxo[] = []
+    let scanned = 0
+    for (const u of utxos) {
+      if (scanned >= 60) break
+      scanned++
+      const c = await trace(u.txid, u.vout)
+      if (c === null || c.size !== 1) continue // only single-rune UTXOs (v1)
+      const [id, amount] = [...c][0]
+      out.push({ txid: u.txid, vout: u.vout, value: u.value, runeId: id, runeName: NAMES[id] ?? id, amount })
+    }
+    return out
+  } catch (e: any) {
+    return { error: String(e?.message || e) }
+  }
+}
+
+export type OfferDraft = {
+  psbtB64: string
+  sellerInputIndex: number
+  runeId: string
+  runeName: string
+  amount: bigint
+  price: number
+  runeUtxo: string
+  sellerAddr: string
+  taproot: boolean
+}
+
+/** Build the seller's partial SINGLE|ACP offer PSBT (input0 = rune UTXO, output0 = payment).
+    Never signs or broadcasts. The caller has the wallet sign input0 with sighash 0x83. */
+export async function buildOffer(utxo: SellerRuneUtxo, price: number, sellerAddr: string): Promise<OfferDraft | { error: string }> {
+  try {
+    if (!Number.isInteger(price) || price < DUST) return { error: `Price must be a whole number of sats ≥ ${DUST}.` }
+    const lib = await getLib()
+    const trace = await makeTracer(lib)
+    // re-trace to confirm the UTXO really holds exactly this single rune (never trust the list)
+    const content = await trace(utxo.txid, utxo.vout)
+    if (content === null) return { error: 'Could not fully trace your rune UTXO — refusing to offer it.' }
+    if (content.size !== 1) return { error: `That UTXO holds ${content.size} runes; only single-rune offers are supported.` }
+    const [id, amount] = [...content][0]
+    if (id !== utxo.runeId || amount !== utxo.amount) return { error: 'Rune content changed since it was listed — refresh and retry.' }
+    const sellerSpk = lib.b.address.toOutputScript(sellerAddr, BELLS)
+    const isP2WPKH = sellerSpk.length === 22 && sellerSpk[0] === 0x00 && sellerSpk[1] === 0x14
+    const isP2TR = sellerSpk.length === 34 && sellerSpk[0] === 0x51 && sellerSpk[1] === 0x20
+    if (!isP2WPKH && !isP2TR) return { error: 'Your address type is unsupported (need a bel1q… or bel1p… address).' }
+    const psbt = new lib.b.Psbt({ network: BELLS })
+    psbt.addInput({ hash: utxo.txid, index: utxo.vout, witnessUtxo: { script: sellerSpk, value: utxo.value }, sighashType: SINGLE_ACP })
+    psbt.addOutput({ script: sellerSpk, value: price }) // output 0 — committed by SINGLE|ACP
+    return {
+      psbtB64: psbt.toBase64(),
+      sellerInputIndex: 0,
+      runeId: id,
+      runeName: NAMES[id] ?? id,
+      amount,
+      price,
+      runeUtxo: `${utxo.txid}:${utxo.vout}`,
+      sellerAddr,
+      taproot: isP2TR,
+    }
+  } catch (e: any) {
+    return { error: String(e?.message || e) }
+  }
+}
+
+/** Extract the sighash-type byte from a serialized P2WPKH witness ([count][len sig][sig…]).
+    Returns null if it can't be parsed (e.g. taproot). */
+function witnessSighashByte(w: any): number | null {
+  if (!w?.length || w.length < 3) return null
+  const count = w[0]
+  if (count < 1) return null
+  const len = w[1] // P2WPKH sig length < 0xfd
+  if (len < 1 || 2 + len > w.length) return null
+  return w[1 + len]
+}
+
+/** Validate the wallet-signed offer (still a bare input0→output0, payment intact, signed
+    with SINGLE|ACP 0x83), then POST it to the relay. Refuses to publish a malformed offer —
+    a non-0x83 sig would silently break when a buyer appends outputs. */
+export async function validateAndPostOffer(signed: string, draft: OfferDraft, relay: string): Promise<{ id: string } | { error: string }> {
+  try {
+    const lib = await getLib()
+    const s = signed.trim()
+    const psbt = /^cHNidP/.test(s) ? lib.b.Psbt.fromBase64(s, { network: BELLS }) : lib.b.Psbt.fromHex(s, { network: BELLS })
+    // shape: exactly input0 -> output0 (a buyer appends the rest); the wallet must not alter it
+    if (psbt.data.inputs.length !== 1 || psbt.txOutputs.length !== 1) return { error: 'Wallet altered the offer shape — refusing to publish.' }
+    const out0 = psbt.txOutputs[0]
+    const sellerSpk = lib.b.address.toOutputScript(draft.sellerAddr, BELLS)
+    if (out0.value !== draft.price || Buffer.compare(Buffer.from(out0.script), Buffer.from(sellerSpk)) !== 0)
+      return { error: 'Wallet changed the payment output — refusing to publish.' }
+    // the SINGLE|ACP signature must be present AND sighash-typed 0x83
+    const inp: any = psbt.data.inputs[0]
+    let sh: number | null = null
+    if (inp.partialSig?.length) {
+      const sig = inp.partialSig[0].signature
+      sh = sig[sig.length - 1]
+    } else if (inp.tapKeySig) {
+      sh = inp.tapKeySig.length === 65 ? inp.tapKeySig[64] : (inp.sighashType ?? 0x00)
+    } else if (inp.finalScriptWitness) {
+      sh = witnessSighashByte(inp.finalScriptWitness)
+    }
+    if (sh === null) return { error: 'Wallet returned no signature on the rune input — nothing to publish.' }
+    if (sh !== SINGLE_ACP)
+      return { error: `Wallet signed sighash 0x${sh.toString(16)} instead of SINGLE|ANYONECANPAY (0x83). Publishing this would let a buyer break the swap — refused.` }
+    const res = await fetch(`${relay}/offers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runeId: draft.runeId, runeUtxo: draft.runeUtxo, price: draft.price, sellerAddr: draft.sellerAddr, psbt: psbt.toBase64(), amountHint: draft.amount.toString() }),
+    })
+    const b: any = await res.json().catch(() => ({}))
+    if (!res.ok || !b.id) return { error: `Relay rejected the offer: ${res.status} ${JSON.stringify(b)}` }
+    return { id: b.id }
+  } catch (e: any) {
+    return { error: String(e?.message || e) }
+  }
+}

@@ -5,7 +5,7 @@ import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
 import { fetchOffers, type Offer } from '../lib/offers'
-import { buildTake, finalizeAndBroadcast, type TakePlan } from '../lib/runeSwap'
+import { buildTake, finalizeAndBroadcast, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
 
@@ -216,6 +216,13 @@ function ago(sec: number) {
 }
 
 type TakeState = { offer: Offer; plan?: TakePlan; phase: 'building' | 'confirm' | 'signing' | 'done' | 'error'; msg?: string; txid?: string }
+type SellState = {
+  phase: 'scanning' | 'pick' | 'building' | 'confirm' | 'signing' | 'done' | 'error'
+  utxos?: SellerRuneUtxo[]
+  draft?: OfferDraft
+  price?: string
+  msg?: string
+}
 
 /** Live rune-swap offers from the relay + a browser TAKE flow. The buyer only ever
     signs their own plain-$BELLS funding input (no rune of theirs is spent → no burn);
@@ -225,6 +232,7 @@ function RuneOffers() {
   const [state, setState] = useState<'loading' | 'unconfigured' | 'error' | 'ok'>('loading')
   const [offers, setOffers] = useState<Offer[]>([])
   const [take, setTake] = useState<TakeState | null>(null)
+  const [sell, setSell] = useState<SellState | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -283,12 +291,74 @@ function RuneOffers() {
     }
   }
 
+  // ── SELLER: create a SINGLE|ACP offer (signing never broadcasts — no burn risk) ──
+  async function openSell() {
+    if (!address) {
+      setSell({ phase: 'error', msg: 'Connect your Bells wallet first (top right).' })
+      return
+    }
+    setSell({ phase: 'scanning' })
+    const r = await listRuneUtxos(address)
+    if ('error' in r) setSell({ phase: 'error', msg: r.error })
+    else if (r.length === 0) setSell({ phase: 'error', msg: 'No single-rune UTXOs on this address. Connect a wallet account that holds runes (bel1q…).' })
+    else setSell({ phase: 'pick', utxos: r, price: '' })
+  }
+
+  async function startOffer(utxo: SellerRuneUtxo) {
+    const priceNum = Number(sell?.price)
+    if (!Number.isInteger(priceNum) || priceNum < 546) {
+      setSell((s) => (s ? { ...s, msg: 'Enter a whole price ≥ 546 sats.' } : s))
+      return
+    }
+    setSell((s) => (s ? { ...s, phase: 'building', msg: undefined } : s))
+    const r = await buildOffer(utxo, priceNum, address!)
+    setSell((s) => ('error' in r ? { phase: 'error', msg: r.error } : { phase: 'confirm', draft: r, utxos: s?.utxos, price: s?.price }))
+  }
+
+  async function confirmOffer() {
+    if (!sell?.draft) return
+    const d = sell.draft
+    setSell({ ...sell, phase: 'signing' })
+    try {
+      const nin = (window as { nintondo?: { signPsbt?: (psbt: string, opts: unknown) => Promise<unknown> } }).nintondo
+      if (!nin?.signPsbt) throw new Error('Wallet signPsbt unavailable.')
+      // The wallet signs the rune input with SIGHASH_SINGLE|ANYONECANPAY (0x83). This does
+      // NOT broadcast — it only produces a partial offer. validateAndPostOffer refuses to
+      // publish unless the wallet actually returned a 0x83 signature + an intact payment.
+      const toSign = { index: d.sellerInputIndex, address: address!, sighashTypes: [0x83] }
+      const signed = await nin.signPsbt(d.psbtB64, { autoFinalized: false, toSignInputs: [toSign] })
+      const s = signed as Record<string, string>
+      const signedStr = typeof signed === 'string' ? signed : (s?.psbtBase64 ?? s?.psbt ?? s?.psbtHex ?? s?.hex ?? s?.base64 ?? '')
+      if (!signedStr) throw new Error('Wallet returned no signed PSBT.')
+      const res = await validateAndPostOffer(signedStr, d, RELAY)
+      if ('error' in res) {
+        setSell({ phase: 'error', msg: res.error })
+        return
+      }
+      // refresh the live board so the new offer shows
+      fetchOffers().then((rr) => { if (!('error' in rr) && !('unconfigured' in rr)) setOffers(rr.offers) })
+      setSell({ phase: 'done' })
+    } catch (e) {
+      setSell({ phase: 'error', msg: String((e as Error)?.message || e) })
+    }
+  }
+
   const note = (msg: string) => <div className="rounded-btn border border-dashed border-ink-600 p-6 text-center text-sm text-text-mid">{msg}</div>
   return (
     <div className="mt-6 rounded-card border border-ink-600 bg-ink-800/60 p-5">
       <div className="mb-1 flex items-center justify-between">
         <h3 className="font-display text-text-hi">Rune swaps · P2P</h3>
-        <span className="font-micro text-[10px] uppercase tracking-wide text-text-lo">{state === 'ok' ? `${offers.length} live` : state}</span>
+        <div className="flex items-center gap-3">
+          <span className="font-micro text-[10px] uppercase tracking-wide text-text-lo">{state === 'ok' ? `${offers.length} live` : state}</span>
+          <button
+            type="button"
+            onClick={openSell}
+            title={address ? 'List one of your runes for sale (SINGLE|ACP offer — signing never broadcasts).' : 'Connect your wallet to sell a rune.'}
+            className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-forge-400 hover:text-forge-400"
+          >
+            Sell a rune
+          </button>
+        </div>
       </div>
       <p className="mb-4 text-xs text-text-lo">
         Real atomic swaps: a seller signs a SIGHASH_SINGLE|ANYONECANPAY offer, a buyer completes it. No custody, no AMM, no new opcodes — proven on-chain.
@@ -382,6 +452,79 @@ function RuneOffers() {
                 <div className="mt-5 flex gap-3">
                   <button type="button" onClick={() => setTake(null)} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Cancel</button>
                   <button type="button" onClick={confirmTake} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign & broadcast</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {sell && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => sell.phase !== 'signing' && setSell(null)}>
+          <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
+            <h4 className="font-display text-lg text-text-hi">Sell a rune</h4>
+            {sell.phase === 'scanning' && <p className="mt-4 text-sm text-text-mid">Scanning your wallet for rune UTXOs…</p>}
+            {sell.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Building your SINGLE|ACP offer…</p>}
+            {sell.phase === 'signing' && <p className="mt-4 text-sm text-text-mid">Sign in your wallet — this does <span className="text-text-mid">not</span> broadcast, it only creates the offer…</p>}
+            {sell.phase === 'error' && (
+              <>
+                <p className="mt-4 text-sm text-red-300">{sell.msg}</p>
+                <button type="button" onClick={() => setSell(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+            {sell.phase === 'done' && (
+              <>
+                <p className="mt-4 text-sm text-emerald-300">Offer signed + listed ✓ — it's live on the board. Nothing was broadcast; the rune moves only when a buyer takes it.</p>
+                <button type="button" onClick={() => setSell(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
+              </>
+            )}
+            {sell.phase === 'pick' && sell.utxos && (
+              <>
+                <p className="mt-3 text-xs text-text-lo">Pick a rune UTXO to list, set your price in sats, then your wallet signs a SINGLE|ANYONECANPAY offer. Signing never broadcasts.</p>
+                <label className="mt-4 block text-xs uppercase tracking-wide text-text-lo">Price (sats)</label>
+                <input
+                  type="number"
+                  min={546}
+                  step={1}
+                  value={sell.price ?? ''}
+                  onChange={(e) => setSell((s) => (s ? { ...s, price: e.target.value, msg: undefined } : s))}
+                  placeholder="e.g. 1000"
+                  className="mt-1 w-full rounded-btn border border-ink-600 bg-ink-800 px-3 py-2 font-mono text-sm text-text-hi outline-none focus:border-forge-400"
+                />
+                {sell.msg && <p className="mt-2 text-xs text-red-300">{sell.msg}</p>}
+                <div className="mt-4 max-h-56 space-y-2 overflow-y-auto">
+                  {sell.utxos.map((u) => (
+                    <button
+                      key={`${u.txid}:${u.vout}`}
+                      type="button"
+                      onClick={() => startOffer(u)}
+                      className="flex w-full items-center justify-between rounded-btn border border-ink-600 bg-ink-800 px-3 py-2 text-left transition hover:border-forge-400"
+                    >
+                      <span>
+                        <span className="font-mono text-sm text-text-hi">{u.amount.toString()} {u.runeName}</span>
+                        <span className="block font-mono text-[10px] text-text-lo">{u.txid.slice(0, 12)}…:{u.vout} · {u.value} sats</span>
+                      </span>
+                      <span className="font-micro text-[10px] uppercase tracking-wide text-forge-400">List →</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setSell(null)} className="mt-4 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Cancel</button>
+              </>
+            )}
+            {sell.phase === 'confirm' && sell.draft && (
+              <>
+                <dl className="mt-4 space-y-1.5 text-sm">
+                  <div className="flex justify-between"><dt className="text-text-lo">You sell</dt><dd className="font-mono text-text-hi">{sell.draft.amount.toString()} {sell.draft.runeName}</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">You receive</dt><dd className="font-mono text-text-hi">{sell.draft.price.toLocaleString()} sats</dd></div>
+                  <div className="flex justify-between"><dt className="text-text-lo">Rune UTXO</dt><dd className="font-mono text-text-mid">{sell.draft.runeUtxo.slice(0, 12)}…</dd></div>
+                </dl>
+                <p className="mt-3 rounded-btn bg-ink-800 p-3 text-[11px] leading-relaxed text-text-lo">
+                  Your wallet signs the rune input with <span className="text-text-mid">SIGHASH_SINGLE|ANYONECANPAY</span> — this commits only to your payment, never broadcasts, and
+                  cannot burn the rune. We verify the wallet returned a real 0x83 signature before listing.
+                </p>
+                <div className="mt-5 flex gap-3">
+                  <button type="button" onClick={() => setSell({ phase: 'pick', utxos: sell.utxos, price: sell.price })} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Back</button>
+                  <button type="button" onClick={confirmOffer} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign offer</button>
                 </div>
               </>
             )}
