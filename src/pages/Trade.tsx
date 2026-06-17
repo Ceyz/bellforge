@@ -4,7 +4,7 @@ import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
 import { ForgeButton } from '../components/juice/ForgeButton'
-import { fetchOffers, cancelOffer, filterLiveOffers, type Offer } from '../lib/offers'
+import { fetchOffers, cancelOffer, filterLiveOffers, saveCancelToken, type Offer } from '../lib/offers'
 import { buildTake, finalizeAndBroadcast, buildBatchTake, finalizeAndBroadcastBatch, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type BatchTakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
 import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
@@ -515,6 +515,8 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
         setSell({ phase: 'error', msg: res.error })
         return
       }
+      // keep the cancel token (ownership proof) for later delisting from THIS device
+      if (res.cancelToken) saveCancelToken(res.id, res.cancelToken)
       // refresh the live board so the new offer shows
       fetchOffers().then((rr) => { if (!('error' in rr) && !('unconfigured' in rr)) setOffers(rr.offers) })
       setSell({ phase: 'done' })

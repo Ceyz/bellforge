@@ -74,11 +74,38 @@ export async function filterLiveOffers(offers: Offer[]): Promise<Offer[]> {
   return checked.filter((o): o is Offer => o !== null)
 }
 
-/** Delist an offer (the seller cancels). Returns ok/false — never throws. */
+// Per-offer cancel token (ownership proof), kept in localStorage by the device that posted.
+const cancelKey = (id: string) => `bf:cancel:${id}`
+export function saveCancelToken(id: string, token: string): void {
+  try {
+    localStorage.setItem(cancelKey(id), token)
+  } catch {
+    /* private mode / storage off */
+  }
+}
+export function getCancelToken(id: string): string | null {
+  try {
+    return localStorage.getItem(cancelKey(id))
+  } catch {
+    return null
+  }
+}
+
+/** Delist an offer (the seller cancels). Sends the per-offer cancel token (ownership proof)
+    so only the device that listed it can cancel. Returns ok/false — never throws. A `false`
+    likely means "no token on this device" → cancel from where you listed (or spend the UTXO). */
 export async function cancelOffer(id: string): Promise<boolean> {
   if (!RELAY) return false
   try {
-    const res = await fetch(`${RELAY}/offers/${id}/cancel`, { method: 'POST' })
+    const token = getCancelToken(id) ?? ''
+    const res = await fetch(`${RELAY}/offers/${id}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })
+    if (res.ok) {
+      try {
+        localStorage.removeItem(cancelKey(id))
+      } catch {
+        /* ignore */
+      }
+    }
     return res.ok
   } catch {
     return false

@@ -19,6 +19,43 @@ import { resolveRune, formatRuneAmount, cleanSymbol, type RuneBalancesResult, ty
 
 const API = ELECTRS.mainnet
 const DUST = 546
+
+// Bounded fetch (timeout + r.ok) so a hung/erroring electrs can't stall the tracer or
+// silently feed an error body into a decode. Throws on timeout / non-2xx.
+async function fetchJson(url: string, ms = 12000): Promise<any> {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), ms)
+  try {
+    const r = await fetch(url, { signal: ctl.signal })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return await r.json()
+  } finally {
+    clearTimeout(t)
+  }
+}
+async function fetchText(url: string, ms = 12000): Promise<string> {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), ms)
+  try {
+    const r = await fetch(url, { signal: ctl.signal })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return await r.text()
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+/** Pre-broadcast safety: is this outpoint still unspent on-chain? Avoids broadcasting a tx
+    whose seller rune input was already spent (front-run/race) — saves a doomed broadcast.
+    On an electrs blip we DON'T block (the node rejects a double-spend anyway). */
+async function isUnspent(txid: string, vout: number): Promise<boolean> {
+  try {
+    const j = await fetchJson(`${API}/tx/${txid}/outspend/${vout}`)
+    return j?.spent !== true
+  } catch {
+    return true
+  }
+}
 // Bellscoin mainnet params for bitcoinjs-lib (bech32 'bel', wif 0x99).
 const BELLS = {
   messagePrefix: '\x18Bells Signed Message:\n',
@@ -196,12 +233,24 @@ async function makeTracer(lib: Lib) {
     if (memo.has(key)) return memo.get(key)!
     if (depth > 40 || fetches > 800) return null
     fetches++
-    const txj = await fetch(`${API}/tx/${txid}`).then((r) => r.json())
+    let txj: any
+    let hex: string
+    try {
+      txj = await fetchJson(`${API}/tx/${txid}`)
+    } catch {
+      memo.set(key, null) // electrs hung/errored → refuse (never mis-trace)
+      return null
+    }
     if (txj.vin?.[0]?.is_coinbase) {
       memo.set(key, new Map())
       return new Map()
     }
-    const hex = await fetch(`${API}/tx/${txid}/hex`).then((r) => r.text())
+    try {
+      hex = await fetchText(`${API}/tx/${txid}/hex`)
+    } catch {
+      memo.set(key, null)
+      return null
+    }
     const stone = decodeStone(hex, lib)
     const inR = new Map<string, bigint>()
     if (stone)
@@ -328,7 +377,7 @@ export async function buildTake(offer: Offer, buyerAddress: string): Promise<Tak
     // a rune-FREE funding UTXO of the buyer with enough sats
     const fee = 2000
     const need = Math.max(0, price + DUST + fee - v0) + 1000
-    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(buyerAddress)}/utxo`).then((r) => r.json())
+    const utxos: any[] = await fetchJson(`${API}/address/${encodeURIComponent(buyerAddress)}/utxo`)
     let fund: any = null
     let scanned = 0
     for (const u of utxos) {
@@ -439,6 +488,7 @@ export async function finalizeAndBroadcast(signed: string, expect: { runeId: str
     const g = allocate(outScripts, stone, inSum)
     if (g.burned.size) return { error: 'final guard: rune would burn — NOT broadcasting' }
     if ((g.out.get(2)?.get(expect.runeId) ?? 0n) !== expect.amount) return { error: 'final guard: buyer would not receive the full rune — NOT broadcasting' }
+    if (!(await isUnspent(expect.runeTxid, expect.runeVout))) return { error: 'The seller rune UTXO was already spent (front-run) — NOT broadcasting.' }
     const res = await fetch(`${API}/tx`, { method: 'POST', body: hex })
     const body = await res.text()
     if (!res.ok) return { error: `broadcast rejected: ${body}` }
@@ -532,7 +582,7 @@ export async function buildBatchTake(offers: Offer[], buyerAddress: string): Pro
     const n = offers.length
     const fee = 1000 + n * 700 // grows with tx size
     const need = Math.max(0, totalPrice + DUST + fee - totalInVal) + 1000
-    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(buyerAddress)}/utxo`).then((r) => r.json())
+    const utxos: any[] = await fetchJson(`${API}/address/${encodeURIComponent(buyerAddress)}/utxo`)
     let fund: any = null
     let scanned = 0
     for (const u of utxos) {
@@ -630,6 +680,7 @@ export async function finalizeAndBroadcastBatch(
     const g = allocate(outScripts, stone, inSum)
     if (g.burned.size) return { error: 'final guard: rune would burn — NOT broadcasting' }
     if ((g.out.get(expect.recvOut)?.get(expect.runeId) ?? 0n) !== sum) return { error: 'final guard: full rune would not reach you — NOT broadcasting' }
+    for (const s of expect.sellers) if (!(await isUnspent(s.txid, s.vout))) return { error: 'A seller rune UTXO was already spent (front-run) — NOT broadcasting.' }
     const res = await fetch(`${API}/tx`, { method: 'POST', body: hex })
     const body = await res.text()
     if (!res.ok) return { error: `broadcast rejected: ${body}` }
@@ -656,7 +707,7 @@ export async function listRuneUtxos(address: string): Promise<SellerRuneUtxo[] |
     if (isTestnetAddr(address)) return { error: MAINNET_ONLY }
     const lib = await getLib()
     const trace = await makeTracer(lib)
-    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(address)}/utxo`).then((r) => r.json())
+    const utxos: any[] = await fetchJson(`${API}/address/${encodeURIComponent(address)}/utxo`)
     const out: SellerRuneUtxo[] = []
     let scanned = 0
     for (const u of utxos) {
@@ -736,7 +787,7 @@ function witnessSighashByte(w: any): number | null {
 /** Validate the wallet-signed offer (still a bare input0→output0, payment intact, signed
     with SINGLE|ACP 0x83), then POST it to the relay. Refuses to publish a malformed offer —
     a non-0x83 sig would silently break when a buyer appends outputs. */
-export async function validateAndPostOffer(signed: string, draft: OfferDraft, relay: string): Promise<{ id: string } | { error: string }> {
+export async function validateAndPostOffer(signed: string, draft: OfferDraft, relay: string): Promise<{ id: string; cancelToken?: string } | { error: string }> {
   try {
     const lib = await getLib()
     const s = signed.trim()
@@ -768,7 +819,7 @@ export async function validateAndPostOffer(signed: string, draft: OfferDraft, re
     })
     const b: any = await res.json().catch(() => ({}))
     if (!res.ok || !b.id) return { error: `Relay rejected the offer: ${res.status} ${JSON.stringify(b)}` }
-    return { id: b.id }
+    return { id: b.id, cancelToken: b.cancelToken }
   } catch (e: any) {
     return { error: String(e?.message || e) }
   }
@@ -784,7 +835,7 @@ export async function traceRuneBalances(address: string): Promise<RuneBalancesRe
     if (isTestnetAddr(address)) return { rows: [], capped: false }
     const lib = await getLib()
     const trace = await makeTracer(lib)
-    const utxos: any[] = await fetch(`${API}/address/${encodeURIComponent(address)}/utxo`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('utxo fetch'))))
+    const utxos: any[] = await fetchJson(`${API}/address/${encodeURIComponent(address)}/utxo`)
     if (!Array.isArray(utxos)) return { error: true }
     if (utxos.length === 0) return { rows: [], capped: false }
     const MAXU = 150
