@@ -11,6 +11,14 @@ export const GITHUB_URL = 'https://github.com/Ceyz/bellforge'
     deployed `bellforge-offers.<sub>.workers.dev` URL (no trailing slash). */
 export const RELAY = 'https://bellforge-offers.ceyzcrypto.workers.dev'
 
+/** Runes indexer (an `ord` fork, e.g. https://ord.nintondo.io — CORS-open,
+    Accept: application/json). EMPTY ⇒ DISABLED → the UI falls back to the
+    client-side rune decoder/tracer. Set this to the deployed ord base URL (no
+    trailing slash) to switch on EXACT, non-capped balances + live supply from
+    the index. Read/display paths only — the swap's anti-burn tracer stays
+    client-side (trust-minimized), never an ord oracle. */
+export const ORD = ''
+
 /** Bellscoin block explorer (Nintondo). */
 export const EXPLORER = 'https://nintondo.io/bells/explorer'
 export const explorerAddress = (a: string) => `${EXPLORER}/address/${a}`

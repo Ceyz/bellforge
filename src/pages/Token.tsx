@@ -13,6 +13,8 @@ import { MoltenGauge } from '../components/juice/MoltenGauge'
 import { ForgeButton } from '../components/juice/ForgeButton'
 import { RuneTradeChart } from '../components/app/RuneTradeChart'
 import { fetchChainTip, type ChainTip } from '../lib/chain'
+import { ordRuneMeta, type OrdRune } from '../lib/ord'
+import { formatRuneAmount } from '../lib/runes'
 import { timeAgo } from '../lib/format'
 import { asset, EXPLORER, PROOF_URL } from '../config'
 import { getToken, type TokenInfo } from '../lib/tokens'
@@ -332,6 +334,18 @@ function Stat({ k, v, note }: { k: string; v: string; note: string }) {
 /** Live rune market — real settled-swap price (RuneTradeChart) + a CTA into the
     live mainnet order book, so the most actionable token isn't a dead-end. */
 function RuneLive({ token }: { token: TokenInfo }) {
+  // Live supply stats from the ord indexer when configured + reachable; renders
+  // nothing otherwise (no fabricated numbers — the indexer is the only honest
+  // source for global supply/mints).
+  const [meta, setMeta] = useState<OrdRune | null>(null)
+  useEffect(() => {
+    let alive = true
+    if (token.runeId) ordRuneMeta(token.runeId).then((m) => alive && setMeta(m))
+    return () => {
+      alive = false
+    }
+  }, [token.runeId])
+
   return (
     <Reveal className="rounded-card border border-ink-600 bg-ink-800/60 p-6">
       <div className="flex items-center justify-between">
@@ -344,6 +358,25 @@ function RuneLive({ token }: { token: TokenInfo }) {
         {token.sym} is a Runes-protocol token trading live on Bellscoin mainnet. The price below is real — it
         comes from settled peer-to-peer atomic swaps, not a simulated market.
       </p>
+      {meta && (
+        <dl className="mt-4 grid gap-px overflow-hidden rounded-well border border-ink-600 bg-ink-600 sm:grid-cols-3">
+          <div className="bg-ink-800 p-4">
+            <dt className="text-xs text-text-lo">Supply</dt>
+            <dd className="mt-0.5 font-mono text-lg text-text-hi">{formatRuneAmount(meta.supply, meta.divisibility, '')}</dd>
+            <dd className="mt-0.5 text-xs text-text-mid">circulating · from the indexer</dd>
+          </div>
+          <div className="bg-ink-800 p-4">
+            <dt className="text-xs text-text-lo">Mints</dt>
+            <dd className="mt-0.5 font-mono text-lg text-text-hi">{meta.mints.toLocaleString()}</dd>
+            <dd className="mt-0.5 text-xs text-text-mid">{meta.mintable ? 'still mintable' : 'mint closed'}</dd>
+          </div>
+          <div className="bg-ink-800 p-4">
+            <dt className="text-xs text-text-lo">Symbol · decimals</dt>
+            <dd className="mt-0.5 font-mono text-lg text-text-hi">{meta.symbol ?? '¤'} · {meta.divisibility}</dd>
+            <dd className="mt-0.5 text-xs text-text-mid">rune {meta.id}</dd>
+          </div>
+        </dl>
+      )}
       <div className="mt-4">
         <RuneTradeChart rune={token} />
       </div>

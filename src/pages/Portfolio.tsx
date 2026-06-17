@@ -12,6 +12,7 @@ import { ForgeEmpty } from '../components/juice/ForgeEmpty'
 import { HonestBanner } from '../components/ui/HonestBanner'
 import { type RuneBalance } from '../lib/runes'
 import { traceRuneBalances } from '../lib/runeSwap'
+import { ordConfigured } from '../lib/ord'
 import { fetchMyOffers, cancelOffer, type Offer } from '../lib/offers'
 import { timeAgo } from '../lib/format'
 import { asset, DOCS_URL, EXPLORER, explorerAddress, explorerTx } from '../config'
@@ -228,11 +229,18 @@ export function Portfolio() {
                   </table>
                 </div>
                 <div className="mt-3">
-                  <HonestBanner>
-                    Rune balances are decoded <span className="text-text-hi">live in your browser</span> from electrs UTXOs — no indexer.
-                    {runes.capped ? ' This wallet is large, so the list is sampled — balances are a lower bound (≥).' : ''} Global holders and
-                    total supply per rune need the runes indexer (<span className="font-mono">ord.nintondo.io</span>, offline).
-                  </HonestBanner>
+                  {ordConfigured() ? (
+                    <HonestBanner>
+                      Rune balances are <span className="text-text-hi">exact</span>, read from the runes indexer. Per-rune supply and
+                      mint stats are on each token’s page.
+                    </HonestBanner>
+                  ) : (
+                    <HonestBanner>
+                      Rune balances are decoded <span className="text-text-hi">live in your browser</span> from electrs UTXOs — no indexer.
+                      {runes.capped ? ' This wallet is large, so the list is sampled — balances are a lower bound (≥).' : ''} Global holders and
+                      total supply per rune need the runes indexer (<span className="font-mono">ord.nintondo.io</span>, offline).
+                    </HonestBanner>
+                  )}
                 </div>
               </>
             )}

@@ -16,6 +16,7 @@
 import { ELECTRS } from '../config'
 import type { Offer } from './offers'
 import { resolveRune, formatRuneAmount, cleanSymbol, type RuneBalancesResult, type RuneBalance } from './runes'
+import { ordAddressBalances } from './ord'
 
 const API = ELECTRS.mainnet
 const DUST = 546
@@ -833,6 +834,10 @@ export async function validateAndPostOffer(signed: string, draft: OfferDraft, re
 export async function traceRuneBalances(address: string): Promise<RuneBalancesResult> {
   try {
     if (isTestnetAddr(address)) return { rows: [], capped: false }
+    // Prefer the ord indexer when configured + reachable: exact, complete, no cap.
+    // null ⇒ disabled/unreachable → fall through to the client-side lineage replay.
+    const fromOrd = await ordAddressBalances(address)
+    if (fromOrd) return { rows: fromOrd, capped: false }
     const lib = await getLib()
     const trace = await makeTracer(lib)
     const utxos: any[] = await fetchJson(`${API}/address/${encodeURIComponent(address)}/utxo`)
