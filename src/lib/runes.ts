@@ -47,7 +47,7 @@ export interface RuneBalance {
 
 export type RuneBalancesResult = { rows: RuneBalance[]; capped: boolean } | { error: true }
 
-interface DecodedStone {
+export interface DecodedStone {
   mint: RuneIdStr | null
   pointer: number | null
   etching: EtchingView | null
@@ -254,7 +254,7 @@ export async function resolveRune(id: RuneIdStr): Promise<RuneMeta> {
 }
 
 // ── allocation (read-only subset of the Runes spec) ──────────────────────────
-function allocate(outs: { script: Uint8Array }[], stone: DecodedStone, mintPerMint: bigint): Map<number, Map<RuneIdStr, bigint>> {
+export function allocate(outs: { script: Uint8Array }[], stone: DecodedStone, mintPerMint: bigint): Map<number, Map<RuneIdStr, bigint>> {
   const numOuts = outs.length
   const isOpReturn = (k: number) => outs[k]?.script?.[0] === 0x6a
   const eligible: number[] = []

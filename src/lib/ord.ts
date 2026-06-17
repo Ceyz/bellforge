@@ -104,13 +104,13 @@ export async function ordRuneMeta(idOrName: string): Promise<OrdRune | null> {
   return meta
 }
 
-const fracLen = (dec: string): number => {
+export const fracLen = (dec: string): number => {
   const i = dec.indexOf('.')
   return i < 0 ? 0 : dec.length - i - 1
 }
 
 /** Decimal STRING (divisibility already applied, e.g. "1.1") → raw integer bigint. */
-function decimalToRaw(dec: string, div: number): bigint {
+export function decimalToRaw(dec: string, div: number): bigint {
   const neg = dec.startsWith('-')
   const s = (neg ? dec.slice(1) : dec).trim()
   const [ipRaw, fpRaw = ''] = s.split('.')
