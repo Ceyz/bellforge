@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { PageHeader } from '../components/app/PageHeader'
 import { RouteSelector } from '../components/app/RouteSelector'
 import { SlidingToggle } from '../components/juice/SlidingToggle'
+import { Button } from '../components/ui/Button'
 import { ForgeButton } from '../components/juice/ForgeButton'
 import { fetchOffers, cancelOffer, filterLiveOffers, saveCancelToken, type Offer } from '../lib/offers'
 import { buildTake, finalizeAndBroadcast, buildBatchTake, finalizeAndBroadcastBatch, listRuneUtxos, buildOffer, validateAndPostOffer, type TakePlan, type BatchTakePlan, type SellerRuneUtxo, type OfferDraft } from '../lib/runeSwap'
@@ -10,6 +12,8 @@ import { useWallet } from '../wallet/WalletProvider'
 import { EXPLORER, RELAY } from '../config'
 import { TokenPicker } from '../components/app/TokenPicker'
 import { RuneTradeChart } from '../components/app/RuneTradeChart'
+import { Modal } from '../components/ui/Modal'
+import { timeAgo } from '../lib/format'
 import { getToken, type TokenInfo } from '../lib/tokens'
 
 /* Illustrative book — clearly labelled a preview. No real market exists pre-mainnet. */
@@ -34,11 +38,11 @@ const well = 'input-forge rounded-btn border border-ink-600 bg-ink-900 p-4'
 
 function OrderRow({ p, s, side, i }: { p: number; s: number; side: 'ask' | 'bid'; i: number }) {
   const reduce = useReducedMotion()
-  const color = side === 'ask' ? 'text-red-400' : 'text-emerald-400'
+  const color = side === 'ask' ? 'text-neg' : 'text-pos'
   const grad =
     side === 'ask'
-      ? 'linear-gradient(270deg,rgba(239,68,68,0.28),rgba(239,68,68,0.03))'
-      : 'linear-gradient(270deg,rgba(16,185,129,0.28),rgba(16,185,129,0.03))'
+      ? 'linear-gradient(270deg,color-mix(in oklab,var(--color-neg) 28%,transparent),color-mix(in oklab,var(--color-neg) 3%,transparent))'
+      : 'linear-gradient(270deg,color-mix(in oklab,var(--color-pos) 28%,transparent),color-mix(in oklab,var(--color-pos) 3%,transparent))'
   return (
     <div className="relative grid grid-cols-3 px-3 py-1 font-mono text-xs">
       <motion.div
@@ -105,9 +109,11 @@ function Chart({ sym }: { sym: string }) {
 
 export function Trade() {
   const reduce = useReducedMotion()
+  const [params] = useSearchParams()
   const [mode, setMode] = useState<'market' | 'limit'>('market')
   const [amt, setAmt] = useState('')
-  const [recv, setRecv] = useState<TokenInfo>(() => getToken('bound')!)
+  // Preselect a token from ?token=<id> (e.g. the "Trade NINTONDO →" CTA on a rune page).
+  const [recv, setRecv] = useState<TokenInfo>(() => getToken(params.get('token') ?? undefined) ?? getToken('bound')!)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dir, setDir] = useState<'in' | 'out'>('in') // 'in' = pay $BELLS → receive token; 'out' = the reverse
   const recvIsRune = recv.protocol === 'rune'
@@ -122,7 +128,7 @@ export function Trade() {
       className="flex items-center gap-1.5 rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600 transition hover:ring-forge-400"
     >
       <span>{recv.sym}</span>
-      <span className={`rounded-pill px-1.5 py-px font-micro text-[8px] uppercase tracking-wide ${recvIsRune ? 'bg-violet-500/15 text-violet-300' : 'bg-forge-500/15 text-forge-300'}`}>
+      <span className={`rounded-pill px-1.5 py-px font-micro text-[8px] uppercase tracking-wide ${recvIsRune ? 'bg-rune-500/15 text-rune-300' : 'bg-forge-500/15 text-forge-300'}`}>
         {recvIsRune ? 'Rune' : 'OP_CAT'}
       </span>
       <span className="text-text-lo">▾</span>
@@ -201,7 +207,7 @@ export function Trade() {
               {mode === 'limit' && (
                 <div className={well}>
                   <div className="mb-1 text-xs text-text-lo">Limit price ($BELLS)</div>
-                  <input className={`${inputCls} text-base`} placeholder="0.00450" inputMode="decimal" />
+                  <input disabled className={`${inputCls} text-base disabled:cursor-not-allowed disabled:opacity-60`} placeholder="0.00450" inputMode="decimal" />
                 </div>
               )}
 
@@ -223,7 +229,7 @@ export function Trade() {
               <div className={well}>
                 <div className="mb-1 text-xs text-text-lo">You receive</div>
                 <div className="flex items-center justify-between gap-3">
-                  <input className={inputCls} placeholder="0.0" inputMode="decimal" />
+                  <input disabled className={`${inputCls} disabled:cursor-not-allowed disabled:opacity-60`} placeholder="—" inputMode="decimal" />
                   {dir === 'in' ? tokenPill : bellsPill}
                 </div>
               </div>
@@ -264,13 +270,6 @@ function walletErr(e: unknown): string {
   if (o?.code === 4001 || /reject|cancel|denied|declin/i.test(msg)) return 'Signature cancelled.'
   return msg || 'Wallet error.'
 }
-function ago(sec: number) {
-  const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
-  if (d < 60) return `${d}s`
-  if (d < 3600) return `${Math.floor(d / 60)}m`
-  if (d < 86400) return `${Math.floor(d / 3600)}h`
-  return `${Math.floor(d / 86400)}d`
-}
 
 type TakeState = { offer: Offer; plan?: TakePlan; phase: 'building' | 'confirm' | 'signing' | 'done' | 'error'; msg?: string; txid?: string }
 type SellState = {
@@ -291,6 +290,10 @@ type SweepState = {
   offers?: Offer[]
   seq?: { total: number; done: number; results: { price: number; txid?: string; error?: string }[] }
 }
+/** A relay offer only has a per-unit price if it carries a (re-traced-on-take) unit hint.
+    Hint-less offers must NOT be treated as "1 unit" — that fabricates a floor and can
+    mis-rank a whole-offer price to the top of the cheapest-per-unit list. */
+const hasUnits = (o: Offer) => Number(o.amount_hint || '0') > 0
 const pricePerUnit = (o: Offer) => o.price / Math.max(1, Number(o.amount_hint || '0'))
 
 /** The rune trading surface for ONE rune: chart + live sell orders (cheapest-first) +
@@ -306,6 +309,9 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
   const [sweepState, setSweepState] = useState<SweepState | null>(null)
   const sweepCancelled = useRef(false)
   const [cancelling, setCancelling] = useState<string | null>(null)
+  const takeTitleId = useId()
+  const sellTitleId = useId()
+  const sweepTitleId = useId()
 
   async function onCancelOffer(id: string) {
     setCancelling(id)
@@ -334,11 +340,15 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
     }
   }, [])
 
-  // this rune's live offers, cheapest (per-unit) first
-  const runeOffers = useMemo(
-    () => offers.filter((o) => o.rune_id === rune.runeId).sort((a, b) => pricePerUnit(a) - pricePerUnit(b)),
-    [offers, rune.runeId],
-  )
+  // this rune's live offers: offers with a known unit count sorted cheapest-per-unit
+  // first, then hint-less offers (sorted by absolute price) appended — so a hint-less
+  // offer can never float to the top of the per-unit ranking that feeds the sweep.
+  const runeOffers = useMemo(() => {
+    const list = offers.filter((o) => o.rune_id === rune.runeId)
+    const withUnits = list.filter(hasUnits).sort((a, b) => pricePerUnit(a) - pricePerUnit(b))
+    const withoutUnits = list.filter((o) => !hasUnits(o)).sort((a, b) => a.price - b.price)
+    return [...withUnits, ...withoutUnits]
+  }, [offers, rune.runeId])
 
   // SWEEP: greedily fill the cheapest offers whose cumulative cost fits the budget
   const sweep = useMemo(() => {
@@ -353,8 +363,9 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
       units += BigInt(o.amount_hint || '0')
     }
     const pickedIds = new Set(picked.map((o) => o.id))
-    const floor = runeOffers.length ? pricePerUnit(runeOffers[0]) : 0 // cheapest per-unit (sorted)
-    const cheapest = runeOffers.length ? runeOffers[0].price : 0 // min budget to fill anything
+    const withUnits = runeOffers.filter(hasUnits)
+    const floor = withUnits.length ? pricePerUnit(withUnits[0]) : null // cheapest per-unit (only where units known)
+    const cheapest = runeOffers.length ? Math.min(...runeOffers.map((o) => o.price)) : 0 // min budget to fill anything
     const allCost = runeOffers.reduce((s, o) => s + o.price, 0)
     return { picked, pickedIds, spent, units, floor, cheapest, allCost }
   }, [runeOffers, budget])
@@ -555,11 +566,11 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                         <table className="w-full text-sm">
                           <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
                             <tr>
-                              <th className="px-4 py-2 font-medium">Price</th>
-                              <th className="px-4 py-2 font-medium">Units</th>
-                              <th className="px-4 py-2 font-medium">Seller</th>
-                              <th className="px-4 py-2 font-medium">Age</th>
-                              <th className="px-4 py-2"></th>
+                              <th scope="col" className="px-4 py-2 font-medium">Price</th>
+                              <th scope="col" className="px-4 py-2 font-medium" title="Relay-reported size — re-traced and verified when you take the offer.">Units</th>
+                              <th scope="col" className="px-4 py-2 font-medium">Seller</th>
+                              <th scope="col" className="px-4 py-2 font-medium">Age</th>
+                              <th scope="col" className="px-4 py-2"></th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-ink-600">
@@ -577,7 +588,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                                       {short(o.seller_addr)}
                                     </a>
                                   </td>
-                                  <td className="px-4 py-3 text-text-lo">{ago(o.created_at)}</td>
+                                  <td className="px-4 py-3 text-text-lo">{timeAgo(o.created_at, { suffix: false })}</td>
                                   <td className="px-4 py-3 text-right">
                                     {address && o.seller_addr === address ? (
                                       <span className="inline-flex items-center gap-2">
@@ -587,20 +598,19 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                                           onClick={() => onCancelOffer(o.id)}
                                           disabled={cancelling === o.id}
                                           title="Delist your offer (nothing was broadcast; the rune never moved)."
-                                          className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-red-400/60 hover:text-red-300 disabled:opacity-50"
+                                          className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-neg/60 hover:text-neg disabled:opacity-50"
                                         >
                                           {cancelling === o.id ? 'Cancelling…' : 'Cancel'}
                                         </button>
                                       </span>
                                     ) : (
-                                      <button
-                                        type="button"
+                                      <Button
+                                        size="xs"
                                         onClick={() => startTake(o)}
                                         title={address ? 'Buy this offer — your wallet signs only your $BELLS funding input.' : 'Connect your wallet to take an offer.'}
-                                        className="rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:brightness-110"
                                       >
                                         Take
-                                      </button>
+                                      </Button>
                                     )}
                                   </td>
                                 </tr>
@@ -630,30 +640,29 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
               )}
             </div>
             <div className="flex items-center justify-between gap-3">
-              <input value={budget} onChange={(e) => setBudget(e.target.value)} className={inputCls} placeholder="0" inputMode="numeric" />
+              <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))} className={inputCls} placeholder="0" inputMode="numeric" />
               <span className="rounded-pill bg-ink-800 px-3 py-1 font-mono text-sm text-text-hi ring-1 ring-ink-600">sats</span>
             </div>
           </div>
 
           <div className="rounded-btn border border-ink-600 bg-ink-900 p-3 text-sm">
-            <div className="flex justify-between"><span className="text-text-lo">Floor</span><span className="font-mono text-text-mid">{state === 'ok' && runeOffers.length ? `${sweep.floor.toLocaleString(undefined, { maximumFractionDigits: 2 })} sats/${rune.sym}` : '—'}</span></div>
+            <div className="flex justify-between"><span className="text-text-lo">Floor</span><span className="font-mono text-text-mid">{state === 'ok' && sweep.floor != null ? `${sweep.floor.toLocaleString(undefined, { maximumFractionDigits: 2 })} sats/${rune.sym}` : '—'}</span></div>
             <div className="mt-1 flex justify-between"><span className="text-text-lo">Fills</span><span className="font-mono text-text-hi">{sweep.picked.length} offer{sweep.picked.length === 1 ? '' : 's'}</span></div>
             <div className="mt-1 flex justify-between"><span className="text-text-lo">You receive</span><span className="font-mono text-text-hi">~{sweep.units.toString()} {rune.sym}</span></div>
             <div className="mt-1 flex justify-between"><span className="text-text-lo">You pay</span><span className="font-mono text-text-mid">{sweep.spent.toLocaleString()} sats</span></div>
           </div>
 
-          <button
-            type="button"
+          <Button
             onClick={startSweep}
             disabled={!sweep.picked.length}
-            className="w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-3 text-sm font-semibold text-ink-950 transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full disabled:cursor-not-allowed disabled:opacity-40"
           >
             {sweep.picked.length
               ? `Sweep ${sweep.picked.length} cheapest · ${sweep.spent.toLocaleString()} sats`
               : Number(budget) > 0 && sweep.cheapest > 0
                 ? `Min ${sweep.cheapest.toLocaleString()} sats to fill one`
                 : 'Set a budget to sweep'}
-          </button>
+          </Button>
           <p className="text-center text-[11px] leading-relaxed text-text-lo">
             Fills the cheapest offers up to your budget in <span className="text-text-mid">one atomic transaction — a single signature</span>. The anti-burn guard
             verifies every rune lands on you before broadcast.
@@ -674,13 +683,12 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
       </div>
 
       {take && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => take.phase !== 'signing' && setTake(null)}>
-          <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
-            <h4 className="font-display text-lg text-text-hi">Take rune offer</h4>
+        <Modal labelledBy={takeTitleId} canClose={take.phase !== 'signing'} onClose={() => setTake(null)}>
+            <h4 id={takeTitleId} className="font-display text-lg text-text-hi">Take rune offer</h4>
             {take.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Tracing the rune + preparing your transaction…</p>}
             {take.phase === 'error' && (
               <>
-                <p className="mt-4 text-sm text-red-300">{take.msg}</p>
+                <p className="mt-4 text-sm text-neg">{take.msg}</p>
                 <button type="button" onClick={() => setTake(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
               </>
             )}
@@ -692,7 +700,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
             )}
             {take.phase === 'done' && (
               <>
-                <p className="mt-4 text-sm text-emerald-300">Swap broadcast ✓ — the rune is yours.</p>
+                <p className="mt-4 text-sm text-pos">Swap broadcast ✓ — the rune is yours.</p>
                 <a href={`${EXPLORER}/tx/${take.txid}`} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all font-mono text-xs text-forge-400 hover:underline">{take.txid}</a>
                 <button type="button" onClick={() => setTake(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
               </>
@@ -711,18 +719,16 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                 </p>
                 <div className="mt-5 flex gap-3">
                   <button type="button" onClick={() => setTake(null)} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Cancel</button>
-                  <button type="button" onClick={confirmTake} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign & broadcast</button>
+                  <Button size="sm" onClick={confirmTake} className="flex-1">Sign & broadcast</Button>
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {sell && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => sell.phase !== 'signing' && setSell(null)}>
-          <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
-            <h4 className="font-display text-lg text-text-hi">Sell a rune</h4>
+        <Modal labelledBy={sellTitleId} canClose={sell.phase !== 'signing'} onClose={() => setSell(null)}>
+            <h4 id={sellTitleId} className="font-display text-lg text-text-hi">Sell a rune</h4>
             {sell.phase === 'scanning' && <p className="mt-4 text-sm text-text-mid">Scanning your wallet for rune UTXOs…</p>}
             {sell.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Building your SINGLE|ACP offer…</p>}
             {sell.phase === 'signing' && (
@@ -733,13 +739,13 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
             )}
             {sell.phase === 'error' && (
               <>
-                <p className="mt-4 text-sm text-red-300">{sell.msg}</p>
+                <p className="mt-4 text-sm text-neg">{sell.msg}</p>
                 <button type="button" onClick={() => setSell(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
               </>
             )}
             {sell.phase === 'done' && (
               <>
-                <p className="mt-4 text-sm text-emerald-300">Offer signed + listed ✓ — it's live on the board. Nothing was broadcast; the rune moves only when a buyer takes it.</p>
+                <p className="mt-4 text-sm text-pos">Offer signed + listed ✓ — it's live on the board. Nothing was broadcast; the rune moves only when a buyer takes it.</p>
                 <button type="button" onClick={() => setSell(null)} className="mt-5 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
               </>
             )}
@@ -756,7 +762,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                   placeholder="e.g. 1000"
                   className="mt-1 w-full rounded-btn border border-ink-600 bg-ink-800 px-3 py-2 font-mono text-sm text-text-hi outline-none focus:border-forge-400"
                 />
-                {sell.msg && <p className="mt-2 text-xs text-red-300">{sell.msg}</p>}
+                {sell.msg && <p className="mt-2 text-xs text-neg">{sell.msg}</p>}
                 <div className="mt-4 max-h-56 space-y-2 overflow-y-auto">
                   {sell.utxos.map((u) => (
                     <button
@@ -789,18 +795,16 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                 </p>
                 <div className="mt-5 flex gap-3">
                   <button type="button" onClick={() => setSell({ phase: 'pick', utxos: sell.utxos, price: sell.price })} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Back</button>
-                  <button type="button" onClick={confirmOffer} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign offer</button>
+                  <Button size="sm" onClick={confirmOffer} className="flex-1">Sign offer</Button>
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {sweepState && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => (sweepState.phase === 'done' || sweepState.phase === 'error') && setSweepState(null)}>
-          <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-6" onClick={(e) => e.stopPropagation()}>
-            <h4 className="font-display text-lg text-text-hi">Sweep {rune.sym}</h4>
+        <Modal labelledBy={sweepTitleId} canClose={sweepState.phase === 'done' || sweepState.phase === 'error'} onClose={() => setSweepState(null)}>
+            <h4 id={sweepTitleId} className="font-display text-lg text-text-hi">Sweep {rune.sym}</h4>
 
             {sweepState.phase === 'building' && <p className="mt-4 text-sm text-text-mid">Tracing {sweepState.offers?.length} offers + building one atomic transaction…</p>}
             {sweepState.phase === 'signing' && (
@@ -812,11 +816,11 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
 
             {sweepState.phase === 'error' && (
               <>
-                <p className="mt-4 text-sm text-red-300">{sweepState.msg}</p>
+                <p className="mt-4 text-sm text-neg">{sweepState.msg}</p>
                 {address && (sweepState.offers?.length ?? 0) > 0 && (
-                  <button type="button" onClick={sweepSequential} className="mt-4 w-full rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">
+                  <Button size="sm" onClick={sweepSequential} className="mt-4 w-full">
                     Take one-by-one instead ({sweepState.offers!.length} signatures)
-                  </button>
+                  </Button>
                 )}
                 <button type="button" onClick={() => setSweepState(null)} className="mt-2 w-full rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Close</button>
               </>
@@ -824,7 +828,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
 
             {sweepState.phase === 'done' && (
               <>
-                <p className="mt-4 text-sm text-emerald-300">
+                <p className="mt-4 text-sm text-pos">
                   {sweepState.txid ? `Sweep broadcast ✓ — the runes are yours.` : `Done — ${sweepState.seq?.results.filter((r) => r.txid).length ?? 0} of ${sweepState.seq?.total ?? 0} filled.`}
                 </p>
                 {sweepState.txid && (
@@ -848,7 +852,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                 </p>
                 <div className="mt-5 flex gap-3">
                   <button type="button" onClick={() => setSweepState(null)} className="flex-1 rounded-btn bg-ink-700 px-4 py-2 text-sm text-text-hi">Cancel</button>
-                  <button type="button" onClick={confirmSweep} className="flex-1 rounded-btn bg-gradient-to-b from-forge-400 to-forge-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110">Sign &amp; broadcast</button>
+                  <Button size="sm" onClick={confirmSweep} className="flex-1">Sign &amp; broadcast</Button>
                 </div>
               </>
             )}
@@ -863,9 +867,9 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                     <div key={i} className="flex items-center justify-between rounded-btn border border-ink-600 bg-ink-900 px-3 py-2 text-xs">
                       <span className="text-text-lo">{r.price.toLocaleString()} sats</span>
                       {r.txid ? (
-                        <a href={`${EXPLORER}/tx/${r.txid}`} target="_blank" rel="noopener noreferrer" className="font-mono text-emerald-300 hover:underline">✓ {r.txid.slice(0, 10)}…</a>
+                        <a href={`${EXPLORER}/tx/${r.txid}`} target="_blank" rel="noopener noreferrer" className="font-mono text-pos hover:underline">✓ {r.txid.slice(0, 10)}…</a>
                       ) : (
-                        <span className="max-w-[60%] truncate text-right text-red-300" title={r.error}>✕ {r.error}</span>
+                        <span className="max-w-[60%] truncate text-right text-neg" title={r.error}>✕ {r.error}</span>
                       )}
                     </div>
                   ))}
@@ -876,8 +880,7 @@ function RuneTradeView({ rune, pill }: { rune: TokenInfo; pill: ReactNode }) {
                 </button>
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   )

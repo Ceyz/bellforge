@@ -5,7 +5,7 @@ import { Disclosure } from '../juice/Disclosure'
 const QA: [string, string][] = [
   [
     'Is my money safe?',
-    'There is no real money yet — Bellforge is on regtest with zero value. At mainnet, anti-inflation and ownership are enforced by the coin’s own script at consensus, plus an independent indexer as defense-in-depth.',
+    'It depends on the surface. The OP_CAT covenant stack ($BOUND, Deploy, Pools, Lend) is on regtest with zero value; at mainnet, anti-inflation and ownership are enforced by the coin’s own script at consensus, plus an independent indexer as defense-in-depth. Rune trading on Trade is live on Bellscoin mainnet and moves real value — it is non-custodial peer-to-peer atomic swaps, where your wallet only ever signs your own $BELLS funding input, never a rune UTXO.',
   ],
   [
     'Why regtest?',

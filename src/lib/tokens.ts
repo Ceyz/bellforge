@@ -16,17 +16,14 @@ export type TokenInfo = {
   runeId?: string
   status: Status
   sprite?: string
-  network: string
   /** One line: what it is + (for $BOUND) that it is NOT Bellforge's own token. */
   origin: string
   blurb: string
   // OP_CAT-token economics (omitted for native coins):
   cap?: number
   minted?: number
-  decimals?: number
   /** Holder count — populated by the P4 indexer at mainnet. undefined ⇒ honest 0/— today. */
   holders?: number
-  mintModel?: string
   /** Donut distribution; a single 100% slice = fair mint. */
   distribution?: { label: string; pct: number }[]
   facts: { k: string; v: string; note: string }[]
@@ -60,7 +57,6 @@ export const TOKENS: Record<string, TokenInfo> = {
     tag: 'Native coin',
     type: 'native',
     status: 'live-regtest',
-    network: 'Bellscoin',
     origin:
       'The native coin of Bellscoin — not a covenant token. Secured by proof-of-work, it is the gas and the base pair every token trades against.',
     blurb: 'The base asset and gas of Bellscoin — the liquidity anchor every pair trades against.',
@@ -80,14 +76,11 @@ export const TOKENS: Record<string, TokenInfo> = {
     type: 'opcat',
     status: 'live-regtest',
     sprite: 'icons/bound-ingot.png',
-    network: 'Bellscoin',
     origin:
       'The Bellbound game’s premium token, and the first OP_CAT token minted on Bellscoin — the reference the standard was proven with. It is the game’s token, not Bellforge’s.',
     blurb: 'The game’s premium token and the first OP_CAT token on Bellscoin — divisible, covenant-secured.',
     cap: 21_000_000,
     minted: 0,
-    decimals: 8,
-    mintModel: 'Fair mint',
     distribution: [{ label: 'Fair mint', pct: 100 }],
     facts: [
       { k: 'Planned cap', v: '21,000,000', note: 'Fixed at genesis — never increases' },
@@ -106,7 +99,6 @@ export const TOKENS: Record<string, TokenInfo> = {
     protocol: 'rune',
     runeId: '1:0',
     status: 'live-mainnet',
-    network: 'Bellscoin',
     origin:
       'The flagship Bellscoin Rune (RuneId 1:0) — a Runes-protocol token (Casey Rodarmor’s Runes), not an OP_CAT covenant token and not Bellforge’s. It is a reserved rune with no on-chain etch, mintable one unit per transaction.',
     blurb: 'The flagship Bellscoin Rune (1:0). A Runes-protocol token, mass-minted one unit at a time.',
@@ -127,7 +119,6 @@ export const TOKENS: Record<string, TokenInfo> = {
     protocol: 'rune',
     runeId: '350000:1',
     status: 'live-mainnet',
-    network: 'Bellscoin',
     origin:
       'A Bellscoin Rune etched at block 350000 (RuneId 350000:1). A Runes-protocol token with a premine and a capped open mint — not an OP_CAT covenant token.',
     blurb: 'A Bellscoin Rune (350000:1) — etched with a premine and a capped open mint.',

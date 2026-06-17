@@ -13,6 +13,7 @@ import { HonestBanner } from '../components/ui/HonestBanner'
 import { type RuneBalance } from '../lib/runes'
 import { traceRuneBalances } from '../lib/runeSwap'
 import { fetchMyOffers, cancelOffer, type Offer } from '../lib/offers'
+import { timeAgo } from '../lib/format'
 import { asset, DOCS_URL, EXPLORER, explorerAddress, explorerTx } from '../config'
 
 const RUNE_NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOOK•IN•BELLS' }
@@ -20,14 +21,6 @@ const RUNE_NAMES: Record<string, string> = { '1:0': 'NINTONDO', '350000:1': 'NOO
 type Bal = { state: 'idle' | 'loading' | 'error'; bells: number | null; txCount: number }
 
 const fmtBells = (sats: number) => (sats / 1e8).toLocaleString(undefined, { maximumFractionDigits: 8 })
-
-function ago(sec: number) {
-  const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
-  if (d < 60) return `${d}s ago`
-  if (d < 3600) return `${Math.floor(d / 60)}m ago`
-  if (d < 86400) return `${Math.floor(d / 3600)}h ago`
-  return `${Math.floor(d / 86400)}d ago`
-}
 
 export function Portfolio() {
   const { address, network } = useWallet()
@@ -37,6 +30,7 @@ export function Portfolio() {
   const [runes, setRunes] = useState<{ state: 'idle' | 'loading' | 'error'; rows: RuneBalance[]; capped: boolean }>({ state: 'idle', rows: [], capped: false })
   const [myOffers, setMyOffers] = useState<{ state: 'idle' | 'loading'; rows: Offer[] }>({ state: 'idle', rows: [] })
   const [cancelling, setCancelling] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     // No-address case is handled by the early return in render (ConnectWallet), so we don't
@@ -66,7 +60,7 @@ export function Portfolio() {
     return () => {
       alive = false
     }
-  }, [address])
+  }, [address, reloadKey])
 
   async function onCancel(id: string) {
     setCancelling(id)
@@ -112,7 +106,7 @@ export function Portfolio() {
           transition={{ duration: 6, ease: 'easeInOut', repeat: Infinity }}
         />
         <div className="relative">
-          <p className="flex items-center gap-1.5 text-xs text-text-lo">Total value {live && <EmberDot />}</p>
+          <p className="flex items-center gap-1.5 text-xs text-text-lo">$BELLS balance {live && <EmberDot />}</p>
           <p className="mt-1 font-mono text-4xl text-text-hi">
             {live ? (
               <OdometerNumber value={bal.bells ?? 0} decimals={8} className="font-mono text-4xl text-text-hi" />
@@ -122,7 +116,7 @@ export function Portfolio() {
             <span className="text-xl text-text-mid">BELLS</span>
           </p>
           <p className="mt-1 break-all text-xs text-text-lo">
-            regtest · zero real value{network ? ` · ${network}` : ''} ·{' '}
+            {network === 'testnet' ? 'testnet · no real value' : 'live on Bellscoin mainnet · real value'} ·{' '}
             <a
               href={explorerAddress(address)}
               target="_blank"
@@ -132,6 +126,15 @@ export function Portfolio() {
               {address}
             </a>
           </p>
+          {bal.state === 'error' && (
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="mt-3 rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-mid transition hover:border-forge-400 hover:text-forge-400"
+            >
+              Retry
+            </button>
+          )}
         </div>
       </PageItem>
 
@@ -139,13 +142,13 @@ export function Portfolio() {
         <div className="space-y-6">
           <PageItem>
             <h3 className="mb-3 font-display text-text-hi">Holdings</h3>
-            <div className="overflow-hidden rounded-card border border-ink-600">
+            <div className="overflow-x-auto rounded-card border border-ink-600">
               <table className="w-full text-sm">
                 <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
                   <tr>
-                    <th className="px-5 py-3 font-medium">Token</th>
-                    <th className="px-5 py-3 font-medium">Balance</th>
-                    <th className="px-5 py-3 font-medium">On-chain</th>
+                    <th scope="col" className="px-5 py-3 font-medium">Token</th>
+                    <th scope="col" className="px-5 py-3 font-medium">Balance</th>
+                    <th scope="col" className="px-5 py-3 font-medium">On-chain</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ink-600">
@@ -157,8 +160,8 @@ export function Portfolio() {
                     </td>
                     <td className="px-5 py-4 font-mono text-text-mid">{balText}</td>
                     <td className="px-5 py-4 text-text-lo">
-                      <a href={explorerAddress(address)} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">
-                        {bal.state === 'idle' ? `${bal.txCount.toLocaleString()} txs` : 'electrs'} ↗
+                      <a href={explorerAddress(address)} target="_blank" rel="noopener noreferrer" aria-label="View address on explorer" className="transition hover:text-text-hi">
+                        {bal.state === 'idle' ? `${bal.txCount.toLocaleString()} txs` : bal.state === 'loading' ? 'loading…' : 'unavailable'} ↗
                       </a>
                     </td>
                   </tr>
@@ -167,7 +170,7 @@ export function Portfolio() {
                       <ForgeEmpty
                         icon="mold"
                         title="No OP_CAT tokens yet"
-                        body="Deploy one and it appears here, minted from its own covenant."
+                        body="OP_CAT tokens are regtest R&D with zero real value. Deploy one and it appears here, minted from its own covenant."
                         to="/app/deploy"
                         cta="Open the forge"
                       />
@@ -182,7 +185,9 @@ export function Portfolio() {
             <div className="mb-3 flex items-baseline justify-between">
               <h3 className="font-display text-text-hi">Runes</h3>
               {runes.state === 'idle' && runes.rows.length > 0 && (
-                <span className="text-xs text-text-lo">{runes.capped ? 'sampled (≥)' : `${runes.rows.length} held`}</span>
+                <span className="text-xs text-text-lo" title={runes.capped ? 'Large wallet — list is sampled; balances are a lower bound (≥). See the note below.' : undefined}>
+                  {runes.capped ? `${runes.rows.length} shown · partial (≥)` : `${runes.rows.length} held`}
+                </span>
               )}
             </div>
             {runes.state === 'loading' ? (
@@ -191,17 +196,17 @@ export function Portfolio() {
               <div className="rounded-card border border-ink-600 bg-ink-800/60 p-6 text-center text-sm text-text-mid">Couldn’t read rune UTXOs right now.</div>
             ) : runes.rows.length === 0 ? (
               <div className="rounded-card border border-ink-600 bg-ink-800/60">
-                <ForgeEmpty icon="mold" title="No runes held" body="Runes you hold on this address appear here, decoded live from the chain." to="/app/token" cta="Explore runes" />
+                <ForgeEmpty icon="mold" title="No runes held" body="Runes you hold on this address appear here, decoded live from the chain. Buy one on the live mainnet order book." to="/app/trade" cta="Find a rune to buy" />
               </div>
             ) : (
               <>
-                <div className="overflow-hidden rounded-card border border-ink-600">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto rounded-card border border-ink-600">
+                  <table className="w-full min-w-[30rem] text-sm">
                     <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
                       <tr>
-                        <th className="px-5 py-3 font-medium">Rune</th>
-                        <th className="px-5 py-3 font-medium">Balance</th>
-                        <th className="px-5 py-3 font-medium">Rune ID</th>
+                        <th scope="col" className="px-5 py-3 font-medium">Rune</th>
+                        <th scope="col" className="px-5 py-3 font-medium">Balance</th>
+                        <th scope="col" className="px-5 py-3 font-medium">Rune ID</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-ink-600">
@@ -245,14 +250,14 @@ export function Portfolio() {
                 <ForgeEmpty icon="anvil" title="No live offers" body="Offers you sign in Trade → Sell a rune show here. Signing never broadcasts — cancel anytime." to="/app/trade" cta="Sell a rune" />
               </div>
             ) : (
-              <div className="overflow-hidden rounded-card border border-ink-600">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto rounded-card border border-ink-600">
+                <table className="w-full min-w-[34rem] text-sm">
                   <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-text-lo">
                     <tr>
-                      <th className="px-5 py-3 font-medium">Rune</th>
-                      <th className="px-5 py-3 font-medium">Price</th>
-                      <th className="px-5 py-3 font-medium">Rune UTXO</th>
-                      <th className="px-5 py-3"></th>
+                      <th scope="col" className="px-5 py-3 font-medium">Rune</th>
+                      <th scope="col" className="px-5 py-3 font-medium">Price</th>
+                      <th scope="col" className="px-5 py-3 font-medium">Rune UTXO</th>
+                      <th scope="col" className="px-5 py-3"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-ink-600">
@@ -273,7 +278,8 @@ export function Portfolio() {
                             type="button"
                             onClick={() => onCancel(o.id)}
                             disabled={cancelling === o.id}
-                            className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-red-400/60 hover:text-red-300 disabled:opacity-50"
+                            aria-label={`Cancel ${RUNE_NAMES[o.rune_id] ?? o.rune_id} offer for ${o.price.toLocaleString()} sats`}
+                            className="rounded-btn border border-ink-600 px-3 py-1.5 text-xs font-medium text-text-hi transition hover:border-neg/60 hover:text-neg disabled:opacity-50"
                           >
                             {cancelling === o.id ? 'Cancelling…' : 'Cancel'}
                           </button>
@@ -310,23 +316,23 @@ export function Portfolio() {
                     <span className="flex items-center gap-2.5">
                       <span
                         className={`flex h-7 w-7 items-center justify-center rounded-full text-xs ${
-                          a.dir === 'in' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'
+                          a.dir === 'in' ? 'bg-pos/15 text-pos' : 'bg-neg/15 text-neg'
                         }`}
                       >
                         {a.dir === 'in' ? '↓' : '↑'}
                       </span>
                       <span>
                         <span className="text-text-hi">{a.dir === 'in' ? 'Received' : 'Sent'}</span>
-                        <span className="block text-xs text-text-lo">{a.confirmed ? (a.time ? ago(a.time) : 'confirmed') : 'pending'}</span>
+                        <span className="block text-xs text-text-lo">{a.confirmed ? (a.time ? timeAgo(a.time) : 'confirmed') : 'pending'}</span>
                       </span>
                     </span>
                     <span className="flex items-center gap-3">
-                      <span className={`font-mono ${a.dir === 'in' ? 'text-emerald-300' : 'text-text-hi'}`}>
+                      <span className={`font-mono ${a.dir === 'in' ? 'text-pos' : 'text-text-hi'}`}>
                         {a.dir === 'in' ? '+' : '−'}
                         {fmtBells(a.sats)} BELLS
                       </span>
-                      <a href={explorerTx(a.txid)} target="_blank" rel="noopener noreferrer" title="View on explorer" className="text-text-lo transition hover:text-forge-400">
-                        ↗
+                      <a href={explorerTx(a.txid)} target="_blank" rel="noopener noreferrer" title="View on explorer" aria-label="View transaction on explorer" className="text-text-lo transition hover:text-forge-400">
+                        <span aria-hidden="true">↗</span>
                       </a>
                     </span>
                   </li>

@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RouteCard } from './RouteCard'
-import { psbtMetrics, smartRoute, fmtPrice, fmtPct, type RouteId } from '../../lib/routing'
+import { smartRoute, type RouteId } from '../../lib/routing'
 
-/** PSBT-order-book vs pool route picker. Defaults to "Auto · best execution"
-    (lowest slippage). The pool route is shown but R&D-locked until mainnet, so
-    today best execution is always the PSBT book. Honest: no simulated pool price. */
+/** PSBT-order-book vs pool route picker. Both routes are pre-mainnet, so neither
+    shows a simulated price — the OP_CAT book opens at mainnet and covenant pools
+    are R&D. Honest: no fabricated quote on either card. */
 export function RouteSelector({ amountIn, onRoute }: { amountIn: number; onRoute?: (r: RouteId) => void }) {
   const [manual, setManual] = useState<RouteId | null>(null)
   const best = useMemo(() => smartRoute(amountIn), [amountIn])
   const selected = manual ?? best
-  const psbt = psbtMetrics(amountIn)
 
   useEffect(() => {
     onRoute?.(selected)
@@ -25,9 +24,8 @@ export function RouteSelector({ amountIn, onRoute }: { amountIn: number; onRoute
         <RouteCard
           id="psbt"
           title="Order book (PSBT)"
-          status="live-regtest"
-          price={fmtPrice(psbt.price)}
-          slippage={fmtPct(psbt.slippagePct)}
+          status="soon"
+          note="Estimates appear once the OP_CAT order book is live — no simulated price shown."
           selected={selected === 'psbt'}
           onSelect={() => setManual('psbt')}
         />

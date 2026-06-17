@@ -50,8 +50,8 @@ export function RuneTradeChart({ rune }: { rune: TokenInfo }) {
       <div className="mb-2 flex items-center justify-between">
         <span className="font-mono text-sm text-text-hi">{rune.sym} / $BELLS</span>
         {!loading && (
-          <span className="flex items-center gap-1.5 font-micro text-[10px] uppercase tracking-wide text-emerald-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> LIVE · {fills.length} settled
+          <span className="flex items-center gap-1.5 font-micro text-[10px] uppercase tracking-wide text-live-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-live-500" /> LIVE · {fills.length} settled
           </span>
         )}
       </div>

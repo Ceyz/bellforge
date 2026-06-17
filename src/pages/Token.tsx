@@ -7,9 +7,13 @@ import { Badge } from '../components/ui/Badge'
 import { Reveal } from '../components/ui/Reveal'
 import { LinkButton } from '../components/ui/Button'
 import { EmberDot } from '../components/ui/EmberDot'
+import { SectionLabel } from '../components/ui/SectionLabel'
+import { HonestFooter } from '../components/ui/HonestFooter'
 import { MoltenGauge } from '../components/juice/MoltenGauge'
 import { ForgeButton } from '../components/juice/ForgeButton'
+import { RuneTradeChart } from '../components/app/RuneTradeChart'
 import { fetchChainTip, type ChainTip } from '../lib/chain'
+import { timeAgo } from '../lib/format'
 import { asset, EXPLORER, PROOF_URL } from '../config'
 import { getToken, type TokenInfo } from '../lib/tokens'
 
@@ -55,11 +59,16 @@ export function Token() {
             <NativeLive />
             <AboutSection token={token} />
           </>
+        ) : token.protocol === 'rune' ? (
+          <>
+            <RuneLive token={token} />
+            <AboutSection token={token} />
+          </>
         ) : (
           <AboutSection token={token} />
         )}
 
-        <HonestFooter token={token} />
+        <TokenDisclosure token={token} />
       </div>
     </>
   )
@@ -67,6 +76,7 @@ export function Token() {
 
 function Hero({ token }: { token: TokenInfo }) {
   const reduce = useReducedMotion()
+  const isOpcat = token.type === 'opcat' && token.cap != null
   return (
     <div className="relative overflow-hidden rounded-card border border-ink-600 bg-ink-800/60">
       <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-forge-500/20 blur-3xl" />
@@ -91,7 +101,7 @@ function Hero({ token }: { token: TokenInfo }) {
           <Badge className="border-forge-500/30 bg-forge-500/10 text-forge-300">{token.tag.toUpperCase()}</Badge>
           <h2 className="font-display mt-3 text-3xl leading-tight text-text-hi sm:text-4xl">{token.name}</h2>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-text-mid">{token.origin}</p>
-          {token.type === 'opcat' && (
+          {isOpcat && (
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <LinkButton href={PROOF_URL} variant="secondary" className="text-xs">
                 View the covenant proof →
@@ -151,9 +161,14 @@ function SupplySection({ token }: { token: TokenInfo }) {
   )
 }
 
+const SLICE_DOTS = ['bg-forge-500', 'bg-bell-400', 'bg-forge-700', 'bg-ink-600'] as const
+
 function DistributionSection({ token }: { token: TokenInfo }) {
   const dist = token.distribution ?? [{ label: 'Fair mint', pct: 100 }]
   const fairPct = dist[0]?.pct ?? 100
+  const allocated = dist.reduce((s, d) => s + d.pct, 0)
+  const remainder = Math.max(0, 100 - allocated)
+  const pureFairMint = dist.length === 1 && fairPct === 100
   return (
     <Reveal className="rounded-card border border-ink-600 bg-ink-800/60 p-6">
       <SectionLabel>Distribution</SectionLabel>
@@ -161,12 +176,21 @@ function DistributionSection({ token }: { token: TokenInfo }) {
         <Donut pct={fairPct} />
         <div className="space-y-3">
           <p className="text-sm leading-relaxed text-text-mid">
-            <span className="font-mono text-text-hi">{fairPct}%</span> of supply is fair-mintable.
-            No premine, no founder allocation, no treasury carve-out.
+            <span className="font-mono text-text-hi">{fairPct}%</span> of supply is{' '}
+            {(dist[0]?.label ?? 'Fair mint').toLowerCase()}.
+            {pureFairMint && ' No premine, no founder allocation, no treasury carve-out.'}
           </p>
           <ul className="space-y-1.5 text-xs text-text-mid">
-            <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-forge-500" /> {dist[0]?.label ?? 'Fair mint'} — {fairPct}%</li>
-            <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-ink-600" /> Premine / team — {100 - fairPct}%</li>
+            {dist.map((d, i) => (
+              <li key={d.label} className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${SLICE_DOTS[i % SLICE_DOTS.length]}`} /> {d.label} — {d.pct}%
+              </li>
+            ))}
+            {remainder > 0 && (
+              <li className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-ink-600" /> Unallocated — {remainder}%
+              </li>
+            )}
           </ul>
         </div>
       </div>
@@ -249,14 +273,6 @@ function AboutSection({ token }: { token: TokenInfo }) {
   )
 }
 
-function ago(sec: number) {
-  const d = Math.max(0, Math.floor(Date.now() / 1000) - sec)
-  if (d < 60) return `${d}s ago`
-  if (d < 3600) return `${Math.floor(d / 60)}m ago`
-  if (d < 86400) return `${Math.floor(d / 3600)}h ago`
-  return `${Math.floor(d / 86400)}d ago`
-}
-
 /** Real, live Bellscoin network stats from electrs — shown on the native $BELLS
     page while OP_CAT token indexing is still being built. Honest: only data the
     chain actually returns; nothing fabricated. */
@@ -290,7 +306,7 @@ function NativeLive() {
       ) : (
         <dl className="mt-4 grid gap-px overflow-hidden rounded-well border border-ink-600 bg-ink-600 sm:grid-cols-3">
           <Stat k="Block height" v={tip ? tip.height.toLocaleString() : '…'} note="Current chain tip" />
-          <Stat k="Last block" v={tip ? ago(tip.time) : '…'} note="Time since the tip" />
+          <Stat k="Last block" v={tip ? timeAgo(tip.time) : '…'} note="Time since the tip" />
           <Stat k="Txs in tip" v={tip ? tip.txCount.toLocaleString() : '…'} note="Transactions in the latest block" />
         </dl>
       )}
@@ -313,19 +329,59 @@ function Stat({ k, v, note }: { k: string; v: string; note: string }) {
   )
 }
 
-function HonestFooter({ token }: { token: TokenInfo }) {
+/** Live rune market — real settled-swap price (RuneTradeChart) + a CTA into the
+    live mainnet order book, so the most actionable token isn't a dead-end. */
+function RuneLive({ token }: { token: TokenInfo }) {
   return (
-    <div className="rounded-card border border-ink-600 bg-ink-900/60 p-5 text-center">
-      <p className="text-xs leading-relaxed text-text-lo">
-        Honest disclosure: {token.sym} is shown on{' '}
-        <span className="text-text-mid">regtest with zero real value</span>
-        {token.type === 'opcat' ? ' and is not minted yet' : ''}. This page shows planned/on-chain facts only —
-        never price, market cap, holders, or volume, because none exist.
+    <Reveal className="rounded-card border border-ink-600 bg-ink-800/60 p-6">
+      <div className="flex items-center justify-between">
+        <SectionLabel>Live market</SectionLabel>
+        <span className="flex items-center gap-1.5 font-micro text-[10px] uppercase tracking-wide text-text-lo">
+          <EmberDot /> mainnet
+        </span>
+      </div>
+      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-text-mid">
+        {token.sym} is a Runes-protocol token trading live on Bellscoin mainnet. The price below is real — it
+        comes from settled peer-to-peer atomic swaps, not a simulated market.
       </p>
-    </div>
+      <div className="mt-4">
+        <RuneTradeChart rune={token} />
+      </div>
+      <div className="mt-5">
+        <LinkButton href={`#/app/trade?token=${token.id}`} className="text-xs">
+          Trade {token.sym} →
+        </LinkButton>
+      </div>
+    </Reveal>
   )
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="font-micro text-xs tracking-[0.14em] text-forge-400">{String(children).toUpperCase()}</p>
+function TokenDisclosure({ token }: { token: TokenInfo }) {
+  const isRune = token.protocol === 'rune'
+  const isNative = token.type === 'native'
+  return (
+    <HonestFooter>
+      {isNative ? (
+          <>
+            Honest disclosure: {token.sym} is the live Bellscoin base coin on{' '}
+            <span className="text-text-mid">mainnet, with real value</span>. This page shows on-chain network
+            facts only — never price, market cap, holders, or volume.
+          </>
+        ) : isRune ? (
+          <>
+            Honest disclosure: {token.sym} is a Runes-protocol token{' '}
+            <span className="text-text-mid">live on Bellscoin mainnet, with real value</span>. Global holders
+            and supply aren’t shown — the runes indexer (ord.nintondo.io) is offline — and price, market cap or
+            volume are never invented.
+          </>
+        ) : (
+          <>
+            Honest disclosure: {token.sym} is shown on{' '}
+            <span className="text-text-mid">regtest with zero real value</span> and is not minted yet. This page
+            shows planned/on-chain facts only — never price, market cap, holders, or volume, because none exist.
+          </>
+        )}
+    </HonestFooter>
+  )
 }
+

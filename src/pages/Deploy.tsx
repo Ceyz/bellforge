@@ -2,6 +2,7 @@ import { useWallet } from '../wallet/WalletProvider'
 import { ConnectWallet } from '../components/app/ConnectWallet'
 import { PageHeader } from '../components/app/PageHeader'
 import { PageItem } from '../components/ui/PageTransition'
+import { HonestBanner } from '../components/ui/HonestBanner'
 import { ForgeButton } from '../components/juice/ForgeButton'
 import { Crucible } from '../components/juice/Crucible'
 
@@ -17,10 +18,15 @@ export function Deploy() {
         <PageHeader
           title="Deploy"
           subtitle="Deploy a new OP_CAT token — fix its supply at genesis, set an on-chain mint fee, and let its own covenant enforce anti-inflation. Holders mint their share afterwards from the token's page."
-          status="live-regtest"
+          status="soon"
         />
       </PageItem>
-      <PageItem className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <PageItem className="space-y-6">
+        <HonestBanner>
+          The forge below is a cosmetic preview — it moves no funds, and every number comes only from what you
+          type. Deploying goes live after the genesis freeze + external audit.
+        </HonestBanner>
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <form className="space-y-5 rounded-card border border-ink-600 bg-ink-800/60 p-6" onSubmit={(e) => e.preventDefault()}>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
@@ -50,10 +56,6 @@ export function Deploy() {
             ) : (
               <ForgeButton idleLabel="Preview the forge" doneLabel="Token forged (preview)" />
             )}
-            <p className="mt-2.5 text-center text-xs text-text-lo">
-              The forge is a cosmetic preview. Deploying goes live after the genesis freeze + external audit
-              — nothing here moves real funds.
-            </p>
           </div>
         </form>
 
@@ -70,6 +72,7 @@ export function Deploy() {
             These hold as long as the covenant is correct — which the external audit verifies before mainnet.
           </p>
         </aside>
+        </div>
       </PageItem>
     </>
   )

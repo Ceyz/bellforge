@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
-import { motion } from 'motion/react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import { ForgeMark, Wordmark } from '../ui/Brand'
 import { EmberDot } from '../ui/EmberDot'
 import { ConnectWallet } from './ConnectWallet'
+import { NetworkPill } from './NetworkPill'
 import { fetchChainTip } from '../../lib/chain'
 import { EXPLORER, GITHUB_URL } from '../../config'
 import { AppOutlet } from '../../App'
@@ -48,6 +49,17 @@ function NavLinks({ idSuffix }: { idSuffix: string }) {
 }
 
 export function AppLayout() {
+  const { pathname } = useLocation()
+  const reduce = useReducedMotion()
+  const mobileNavRef = useRef<HTMLElement>(null)
+
+  // Bring the active tab into view in the mobile horizontal scroller on route change,
+  // so the sliding underline (and the current page) is never stuck off-screen.
+  useEffect(() => {
+    const el = mobileNavRef.current?.querySelector('[aria-current="page"]')
+    el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [pathname, reduce])
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 border-b border-ink-600/70 bg-ink-900/80 backdrop-blur-xl">
@@ -60,15 +72,17 @@ export function AppLayout() {
             <NavLinks idSuffix="d" />
           </nav>
           <div className="flex items-center gap-3">
-            <span className="hidden items-center gap-1.5 rounded-full bg-ink-700 px-2.5 py-1 text-xs font-medium text-text-mid ring-1 ring-ink-600 sm:inline-flex">
-              <EmberDot /> regtest
-            </span>
+            <NetworkPill />
             <ConnectWallet />
           </div>
         </div>
-        <nav className="no-scrollbar flex items-center gap-1 overflow-x-auto px-5 pb-2 md:hidden">
-          <NavLinks idSuffix="m" />
-        </nav>
+        <div className="relative md:hidden">
+          <nav ref={mobileNavRef} className="no-scrollbar flex items-center gap-1 overflow-x-auto px-5 pb-2">
+            <NavLinks idSuffix="m" />
+          </nav>
+          {/* right-edge fade — signals the row scrolls (the scrollbar is hidden) */}
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-ink-900 to-transparent" />
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-12">
@@ -78,7 +92,7 @@ export function AppLayout() {
       <footer className="border-t border-ink-600/70">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-6 text-sm text-text-lo sm:flex-row">
           <span>
-            Bellforge · regtest preview ·{' '}
+            Bellforge · OP_CAT regtest · runes live on mainnet ·{' '}
             <Link to="/" className="transition hover:text-text-hi">
               back to home
             </Link>

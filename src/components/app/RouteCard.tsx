@@ -56,7 +56,7 @@ export function RouteCard({
           </div>
         </dl>
       )}
-      {selected && !disabled && <p className="mt-2 text-[11px] font-medium text-forge-400">✓ Best execution</p>}
+      {selected && !disabled && !note && <p className="mt-2 text-[11px] font-medium text-forge-400">✓ Best execution</p>}
     </motion.button>
   )
 }

@@ -2,6 +2,7 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ComponentProps } from 
 import { motion, useReducedMotion } from 'motion/react'
 
 type Variant = 'primary' | 'secondary'
+type Size = 'xs' | 'sm' | 'md'
 
 const VARIANTS: Record<Variant, string> = {
   primary:
@@ -9,19 +10,26 @@ const VARIANTS: Record<Variant, string> = {
   secondary: 'border border-ink-600 bg-ink-800 text-text-hi hover:border-zinc-500 hover:bg-ink-700',
 }
 
-const BASE = 'inline-flex items-center justify-center rounded-btn px-5 py-2.5 text-sm font-semibold transition'
+const SIZES: Record<Size, string> = {
+  xs: 'px-3 py-1.5 text-xs',
+  sm: 'px-4 py-2 text-sm',
+  md: 'px-5 py-2.5 text-sm',
+}
+
+const BASE = 'inline-flex items-center justify-center rounded-btn font-semibold transition'
 
 export function Button({
   variant = 'primary',
+  size = 'md',
   className = '',
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
   const reduce = useReducedMotion()
   return (
     <motion.button
       whileTap={reduce ? undefined : { scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-      className={`${BASE} ${VARIANTS[variant]} ${className}`}
+      className={`${BASE} ${SIZES[size]} ${VARIANTS[variant]} ${className}`}
       {...(props as ComponentProps<typeof motion.button>)}
     />
   )
@@ -29,15 +37,16 @@ export function Button({
 
 export function LinkButton({
   variant = 'primary',
+  size = 'md',
   className = '',
   ...props
-}: AnchorHTMLAttributes<HTMLAnchorElement> & { variant?: Variant }) {
+}: AnchorHTMLAttributes<HTMLAnchorElement> & { variant?: Variant; size?: Size }) {
   const reduce = useReducedMotion()
   return (
     <motion.a
       whileTap={reduce ? undefined : { scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-      className={`${BASE} ${VARIANTS[variant]} ${className}`}
+      className={`${BASE} ${SIZES[size]} ${VARIANTS[variant]} ${className}`}
       {...(props as ComponentProps<typeof motion.a>)}
     />
   )

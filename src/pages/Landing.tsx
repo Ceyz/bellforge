@@ -4,13 +4,13 @@ import { LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ForgeCard } from '../components/juice/ForgeCard'
 import { StatusPill, type Status } from '../components/ui/StatusPill'
-import { Badge } from '../components/ui/Badge'
 import { PixelIcon } from '../components/ui/PixelIcon'
 import { Reveal } from '../components/ui/Reveal'
 import { EmberDot } from '../components/ui/EmberDot'
 import { SectionDivider } from '../components/ui/SectionDivider'
 import { ForgeMark, Wordmark } from '../components/ui/Brand'
 import { ConnectWallet } from '../components/app/ConnectWallet'
+import { NetworkPill } from '../components/app/NetworkPill'
 import { ForgeHero } from '../components/landing/ForgeHero'
 import { EmberCanvas } from '../components/landing/EmberCanvas'
 import { HowItWorks } from '../components/landing/HowItWorks'
@@ -27,7 +27,7 @@ type Surface = { title: string; blurb: string; backed: string; status: Status; s
 
 const SURFACES: Surface[] = [
   { title: 'Deploy', blurb: 'Forge a new OP_CAT token — fixed supply, on-chain mint fee, anti-inflation at consensus. Holders mint their share next. $BOUND was the first.', backed: 'covenant minter', status: 'live-regtest', sprite: 'icons/surface-mint.png', to: '/app/deploy' },
-  { title: 'Trade', blurb: 'Swap $BELLS, $BOUND and any OP_CAT token via signed PSBT atomic orders — no custody, no AMM trust.', backed: 'PSBT atomic swap', status: 'soon', sprite: 'icons/surface-trade.png', to: '/app/trade' },
+  { title: 'Trade', blurb: 'Swap Bellscoin runes (NINTONDO) via signed P2P atomic swaps — live on mainnet, no custody, no AMM. The OP_CAT-token order book opens at mainnet.', backed: 'P2P atomic swap', status: 'live-mainnet', sprite: 'icons/surface-trade.png', to: '/app/trade' },
   { title: 'Pools', blurb: 'Provide liquidity for any pair — CSFS-oracle pools on the covenant substrate, quote-bound and block-aware.', backed: 'CSFS oracle pools', status: 'rnd', sprite: 'icons/surface-pools.png', to: '/app/pools' },
   { title: 'Lend', blurb: 'Borrow against $BELLS or token collateral — native covenant composition, not an indexer-trusted ledger.', backed: 'covenant collateral', status: 'rnd', sprite: 'icons/surface-lend.png', to: '/app/lend' },
 ]
@@ -51,7 +51,7 @@ function Header() {
           </Link>
         </nav>
         <div className="flex items-center gap-3">
-          <Badge className="hidden sm:inline-flex">REGTEST</Badge>
+          <NetworkPill />
           <ConnectWallet />
         </div>
       </div>
@@ -66,7 +66,7 @@ function Hero() {
       <div className="relative z-10 mx-auto max-w-6xl px-5 pt-20 pb-12 text-center">
         <span className="font-micro inline-flex items-center gap-2 rounded-pill border border-forge-500/30 bg-forge-500/10 px-3.5 py-1.5 text-xs tracking-wide text-forge-300">
           <EmberDot />
-          REGTEST PREVIEW — NOT LIVE YET
+          OP_CAT PREVIEW — RUNE TRADING LIVE ON MAINNET
         </span>
         <h1 className="font-display mx-auto mt-7 max-w-3xl text-5xl leading-[1.05] tracking-tight text-text-hi sm:text-6xl">
           DeFi, forged on <span className="headline-gradient">Bellscoin</span>
@@ -94,9 +94,9 @@ function HonestyBand() {
   return (
     <section className="mx-auto max-w-6xl px-5">
       <div className="rounded-card border border-forge-500/25 bg-forge-500/[0.06] px-5 py-4 text-center text-sm text-text-mid">
-        <span className="text-text-hi">Currently: regtest.</span> Mainnet ships after the genesis freeze
-        and an external audit. <span className="font-mono text-text-hi">$BOUND</span> has zero value today;
-        nothing here moves real funds.
+        <span className="text-text-hi">The OP_CAT stack is on regtest.</span> <span className="font-mono text-text-hi">$BOUND</span>,
+        Deploy, Pools and Lend have zero value and move no real funds — mainnet ships after the genesis freeze and an
+        external audit. <span className="text-text-hi">Rune trading is live on Bellscoin mainnet</span> and settles real value.
       </div>
     </section>
   )
@@ -151,7 +151,7 @@ function Footer() {
           <a href="#ecosystem" className="transition hover:text-text-hi">Ecosystem</a>
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="transition hover:text-text-hi">GitHub</a>
         </nav>
-        <p>Built on OP_CAT · Bellscoin · regtest preview</p>
+        <p>Built on OP_CAT · Bellscoin · OP_CAT regtest · runes live on mainnet</p>
       </div>
     </footer>
   )

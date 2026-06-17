@@ -131,8 +131,17 @@ export function TokensList() {
                 {rows.map((t) => (
                   <tr
                     key={t.id}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`View ${t.sym}`}
                     onClick={() => navigate(`/app/token/${t.id}`)}
-                    className="cursor-pointer transition hover:bg-ink-700/60"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        navigate(`/app/token/${t.id}`)
+                      }
+                    }}
+                    className="cursor-pointer outline-none transition hover:bg-ink-700/60 focus-visible:bg-ink-700/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-forge-500/60"
                   >
                     <td className="px-5 py-4">
                       <span className="flex items-center gap-2.5">

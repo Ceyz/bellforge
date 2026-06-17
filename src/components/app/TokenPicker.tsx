@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
+import { Modal } from '../ui/Modal'
 import { SlidingToggle } from '../juice/SlidingToggle'
 import { StatusPill } from '../ui/StatusPill'
 import { PixelIcon } from '../ui/PixelIcon'
@@ -19,6 +20,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 export function TokenPicker({ exclude = [], onSelect, onClose }: { exclude?: string[]; onSelect: (t: TokenInfo) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const titleId = useId()
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -29,10 +31,9 @@ export function TokenPicker({ exclude = [], onSelect, onClose }: { exclude?: str
   }, [q, filter, exclude])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-card border border-ink-600 bg-ink-850 p-5" onClick={(e) => e.stopPropagation()}>
+    <Modal labelledBy={titleId} onClose={onClose} className="p-5">
         <div className="mb-3 flex items-center justify-between">
-          <h4 className="font-display text-lg text-text-hi">Select a token</h4>
+          <h4 id={titleId} className="font-display text-lg text-text-hi">Select a token</h4>
           <button type="button" onClick={onClose} aria-label="Close" className="text-text-lo transition hover:text-text-hi">
             ✕
           </button>
@@ -73,7 +74,7 @@ export function TokenPicker({ exclude = [], onSelect, onClose }: { exclude?: str
                   </span>
                   <span
                     className={`shrink-0 rounded-pill px-2 py-0.5 font-micro text-[9px] uppercase tracking-wide ring-1 ${
-                      fam === 'rune' ? 'bg-violet-500/15 text-violet-300 ring-violet-500/30' : 'bg-forge-500/15 text-forge-300 ring-forge-500/30'
+                      fam === 'rune' ? 'bg-rune-500/15 text-rune-300 ring-rune-500/30' : 'bg-forge-500/15 text-forge-300 ring-forge-500/30'
                     }`}
                   >
                     {fam === 'rune' ? 'Rune' : 'OP_CAT'}
@@ -84,7 +85,6 @@ export function TokenPicker({ exclude = [], onSelect, onClose }: { exclude?: str
             })
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
