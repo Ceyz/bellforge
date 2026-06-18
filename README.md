@@ -1,73 +1,72 @@
-# React + TypeScript + Vite
+# Bellforge — DeFi forged on Bellscoin
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Bellforge is a **covenant-secured DeFi stack** for Bellscoin's OP_CAT opcode bundle:
+a divisible token (**$BOUND**), an on-chain AMM, and lending — all enforced by the
+chain itself, not by an operator. This repository holds the web app
+([bellforge.app](https://bellforge.app)) and the covenant engine.
 
-Currently, two official plugins are available:
+> Bellscoin is the first Dogecoin-family chain to ship the `OP_CAT` / `OP_CHECKTEMPLATEVERIFY`
+> / `OP_CHECKSIGFROMSTACK` / `OP_INTERNALKEY` bundle — a superset of Fractal's OP_CAT-only set.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Status — honest by design
 
-## React Compiler
+| Layer | Network | State |
+|---|---|---|
+| Rune trading | **mainnet** | ✅ **Live** — settles real value today |
+| $BOUND token · AMM pools · lending | **regtest** | ✅ **Proven** — 118 covenant test files, green |
+| Mainnet covenants | mainnet | ⛔ **Blocked on OP_CAT activation** |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+`OP_CAT` is a **BIP9 (bit 2)** deployment on Bellscoin mainnet currently showing
+**~0 miner signalling**. As plain BIP9 (no lock-in-on-timeout) it **fails at the
+2026-12-25 timeout** unless ~95% of miners signal within a retarget period. Until it
+activates, a covenant UTXO on mainnet is an `OP_SUCCESS` opcode = **anyone-can-spend**.
 
-## Expanding the ESLint configuration
+So nothing covenant-based ships to mainnet value before three gates clear: **OP_CAT
+activation → an external audit → the permanent genesis freeze.** Every pre-mainnet
+surface on the site is labelled accordingly.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## What's in this repo
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+/          the web app — React 19 + Vite + TypeScript + Tailwind (deployed to bellforge.app)
+native/    the covenant engine — tapscript builders, a script simulator, the P4 indexer, 118 test files
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## The covenant stack (`native/`)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **$BOUND** — every transfer **BINDS** the amount rather than **DECLARING** it (the
+  design lesson from the CAT20 inflation bug, where an indexer trusted a spender-declared
+  amount). Conservation holds *by construction*, proven on a no-escape taptree.
+- **AMM** — constant-product pools with the invariant `x'·y' ≥ x·y` enforced **on-chain**
+  via emulated 64-bit multiply / compare (tapscript has no `OP_MUL` / `OP_DIV`).
+- **Lending** — on-stack LTV, interest (rounded toward the pool), borrow / repay / liquidate.
+- **P4 indexer** — a deterministic, reorg-safe **second validator** that re-derives the
+  ledger from genesis and HALTs on any divergence.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Run it
+
+**Web app**
+```bash
+npm install
+npm run dev        # http://localhost:5173
 ```
+
+**Covenant test suite (118 files)**
+```bash
+cd native
+npm install
+npm test           # node --test --test-concurrency=1
+```
+
+## Security posture
+
+- **BIND, don't DECLARE** — the cardinal rule.
+- Covenant correctness rests on a byte-exact BIP-341 sighash (validated against
+  `belcoinjs-lib`), a NUMS-pinned internal key (no key-path escape), and `|P|==32`
+  pubkey pinning (a non-32-byte pubkey makes `CSFS`/`CHECKSIG` pass *without verifying*).
+- **Covenants are regtest-only** until OP_CAT activates *and* an external audit clears
+  *and* the genesis SPK is frozen. This repo is a pre-audit snapshot — read it as such.
+
+## License
+
+[MIT](LICENSE).

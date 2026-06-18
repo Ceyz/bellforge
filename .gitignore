@@ -22,3 +22,21 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets — NEVER commit key material (the covenant cardinal rule)
+.env
+.env.*
+*.wif
+wif*.txt
+*runetest*.txt
+*.seed
+*.key
+*.token
+*token*.txt
+# transient swap offers (partial PSBTs)
+offer*.txt
+*.psbt
+
+# Local scratch / agent state
+native/_scratch_*
+.claude/settings.local.json

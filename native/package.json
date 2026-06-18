@@ -1,0 +1,17 @@
+{
+  "name": "native",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test --test-concurrency=1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module",
+  "dependencies": {
+    "@bitcoinerlab/secp256k1": "^1.2.0",
+    "belcoinjs-lib": "^0.1.3"
+  }
+}
