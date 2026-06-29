@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IsoForge — character foundation</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9ec5e3;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { position: fixed; inset: 0; display: block; }
+  .hud { position: fixed; left: 16px; pointer-events: none; color: #16242f;
+    text-shadow: 0 1px 0 rgba(255,255,255,.4); }
+  #title { top: 14px; font-weight: 800; font-size: 20px; letter-spacing: .5px; }
+  #title small { font-weight: 600; opacity: .7; font-size: 13px; }
+  #caption { bottom: 16px; font-size: 14px; max-width: 66ch; line-height: 1.45;
+    background: rgba(255,255,255,.34); padding: 8px 12px; border-radius: 10px; }
+  #caption b { color: #9c3c14; }
+  #labels { position: fixed; inset: 0; pointer-events: none; }
+  .nametag { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%);
+    background: rgba(255,255,255,.92); color: #1a2230; font-weight: 700; font-size: 13px;
+    padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.12);
+    box-shadow: 0 3px 8px rgba(0,0,0,.2); white-space: nowrap; }
+  .nametag small { font-weight: 600; opacity: .55; }
+  #err { position: fixed; right: 12px; top: 12px; max-width: 46ch;
+    font: 12px/1.4 ui-monospace, monospace; color: #fff; background: #922;
+    padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; display: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="app"></canvas>
+  <div id="labels"></div>
+  <div id="title" class="hud">IsoForge <small>· character foundation</small></div>
+  <div id="caption" class="hud">
+    <b>Nain &middot; Humain &middot; Elfe</b> &mdash; silhouettes distinctes, cel-shading + contours,
+    visages &amp; cheveux. Dessous, <b>un seul squelette</b> et la <b>m&ecirc;me animation</b> :
+    seules les longueurs d'os changent. Clic-glisser pour tourner.
+  </div>
+  <div id="err"></div>
+  <script type="module" src="./src/main.js"></script>
+  <script>
+    addEventListener('error', (e) => {
+      const el = document.getElementById('err');
+      el.style.display = 'block';
+      el.textContent = 'Error: ' + (e.message || (e.error && e.error.message) || e.type);
+    });
+  </script>
+</body>
+</html>

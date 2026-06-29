@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IsoForge — Création de personnage</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --gold: #d9b25a;
+    --gold-dim: #8a7038;
+    --panel: rgba(14, 18, 26, 0.82);
+    --panel-line: rgba(217, 178, 90, 0.35);
+    --ink: #e8e2d4;
+    --ink-dim: #9a9384;
+    --ally: #3d6cb0;
+    --horde: #b0432f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif; color: var(--ink);
+    background: radial-gradient(120% 90% at 50% 0%, #21304a 0%, #131722 45%, #0a0c12 100%); }
+  #app { position: fixed; inset: 0; display: block; }
+
+  #ui { position: fixed; inset: 0; pointer-events: none;
+    display: grid; grid-template-columns: 250px 1fr 260px; grid-template-rows: auto 1fr auto;
+    grid-template-areas: "head head head" "left center right" "foot foot foot"; gap: 14px; padding: 14px; }
+  #ui > * { pointer-events: auto; }
+
+  /* header / factions */
+  header { grid-area: head; display: flex; align-items: center; justify-content: center; gap: 18px; position: relative; }
+  header h1 { position: absolute; left: 16px; top: 2px; margin: 0; font-size: 15px; font-weight: 700;
+    letter-spacing: 1px; color: var(--gold); text-transform: uppercase; }
+  .factions { display: flex; gap: 0; border: 1px solid var(--panel-line); border-radius: 999px; overflow: hidden; background: var(--panel); }
+  .faction { pointer-events: auto; border: 0; background: transparent; color: var(--ink-dim); font-weight: 800;
+    font-size: 14px; letter-spacing: 1px; padding: 9px 26px; cursor: pointer; text-transform: uppercase; transition: .15s; }
+  .faction.active[data-faction="alliance"] { background: var(--ally); color: #fff; }
+  .faction.active[data-faction="horde"] { background: var(--horde); color: #fff; }
+
+  aside { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 12px; padding: 14px;
+    backdrop-filter: blur(6px); overflow-y: auto; }
+  #left { grid-area: left; }
+  #right { grid-area: right; }
+  aside h2 { margin: 4px 0 10px; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--gold);
+    border-bottom: 1px solid var(--panel-line); padding-bottom: 6px; }
+  aside h2:not(:first-child) { margin-top: 18px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { pointer-events: auto; display: flex; align-items: center; gap: 8px; padding: 8px 9px; cursor: pointer;
+    background: rgba(255,255,255,.04); border: 1px solid transparent; border-radius: 9px; color: var(--ink);
+    font-size: 13px; font-weight: 600; transition: .12s; }
+  .tile:hover { background: rgba(217,178,90,.12); }
+  .tile.active { border-color: var(--gold); background: rgba(217,178,90,.18); box-shadow: 0 0 0 1px var(--gold) inset; }
+  .tile.disabled { opacity: .32; cursor: not-allowed; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(0,0,0,.4); }
+
+  /* customization */
+  .cust { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .cust .label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-dim); }
+  .stepper { display: flex; align-items: center; gap: 10px; }
+  .stepper button { pointer-events: auto; width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--panel-line);
+    background: rgba(255,255,255,.05); color: var(--gold); font-size: 15px; cursor: pointer; line-height: 1; }
+  .stepper button:hover { background: rgba(217,178,90,.18); }
+  .stepper .val { min-width: 70px; text-align: center; font-weight: 700; font-size: 13px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 14px; }
+  .sw { width: 26px; height: 26px; border-radius: 7px; cursor: pointer; border: 2px solid transparent; transition: .1s; }
+  .sw:hover { transform: scale(1.08); }
+  .sw.active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(217,178,90,.4); }
+  .field { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-dim); margin: 2px 0 6px; }
+
+  /* footer */
+  footer { grid-area: foot; display: flex; align-items: center; justify-content: center; gap: 12px; }
+  #name { pointer-events: auto; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px;
+    color: var(--ink); font-size: 15px; padding: 11px 16px; width: 280px; text-align: center; letter-spacing: .5px; }
+  #name::placeholder { color: var(--ink-dim); }
+  .btn { pointer-events: auto; border: 1px solid var(--gold-dim); border-radius: 10px; padding: 11px 22px; cursor: pointer;
+    font-weight: 800; font-size: 14px; letter-spacing: .5px; }
+  .btn.ghost { background: transparent; color: var(--ink-dim); }
+  .btn.primary { background: linear-gradient(180deg, #e6c578, #c79a3e); color: #2a2210; border-color: #efd89a; }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; filter: none; }
+
+  #toast { position: fixed; left: 50%; bottom: 86px; transform: translateX(-50%); background: var(--panel);
+    border: 1px solid var(--gold); color: var(--gold); padding: 10px 18px; border-radius: 10px; font-weight: 700;
+    opacity: 0; transition: .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #err { position: fixed; right: 12px; top: 12px; max-width: 46ch; font: 12px/1.4 ui-monospace, monospace;
+    color: #fff; background: #922; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; display: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="app"></canvas>
+  <div id="ui">
+    <header>
+      <h1>IsoForge</h1>
+      <div class="factions">
+        <button class="faction active" data-faction="alliance">Alliance</button>
+        <button class="faction" data-faction="horde">Horde</button>
+      </div>
+    </header>
+
+    <aside id="left">
+      <h2>Race</h2>
+      <div class="grid" id="races"></div>
+      <h2>Classe</h2>
+      <div class="grid" id="classes"></div>
+    </aside>
+
+    <aside id="right">
+      <h2>Apparence</h2>
+      <div class="cust">
+        <span class="label">Coupe</span>
+        <div class="stepper">
+          <button id="hair-prev">&#8249;</button>
+          <span class="val" id="hair-val">Court</span>
+          <button id="hair-next">&#8250;</button>
+        </div>
+      </div>
+      <div class="field">Couleur des cheveux</div>
+      <div class="swatches" id="sw-hair"></div>
+      <div class="field">Teint de peau</div>
+      <div class="swatches" id="sw-skin"></div>
+      <div class="field">Yeux</div>
+      <div class="swatches" id="sw-eyes"></div>
+    </aside>
+
+    <footer>
+      <button class="btn ghost" id="back">Retour</button>
+      <input id="name" maxlength="16" placeholder="Nom du personnage" />
+      <button class="btn primary" id="create">Entrer dans le monde</button>
+    </footer>
+  </div>
+  <div id="toast"></div>
+  <div id="err"></div>
+
+  <script type="module" src="./src/create.js"></script>
+  <script>
+    addEventListener('error', (e) => {
+      const el = document.getElementById('err');
+      el.style.display = 'block';
+      el.textContent = 'Error: ' + (e.message || (e.error && e.error.message) || e.type);
+    });
+  </script>
+</body>
+</html>
